@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"id": "waylandcraft",
+	"version": "2.1.0-windowmod",
+	"name": "WindowMod",
+	"description": "WaylandCraft ported to Windows — run Windows apps inside Minecraft windows",
+	"authors": [
+		"EVV1E"
+	],
+	"icon": "assets/waylandcraft/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"dev.evvie.waylandcraft.WaylandCraftCommon"
+		],
+		"client": [
+			"dev.evvie.waylandcraft.WaylandCraft"
+		]
+	},
+	"mixins": [
+		"waylandcraft.mixins.json",
+		{
+			"config": "waylandcraft.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.2",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
