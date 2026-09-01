@@ -49,6 +49,10 @@ public class WaylandCraftSettingsManager {
 	}
 	
 	private String tryReadKeymapFromSystem() {
+		// xkbcli is Linux-only, skip on Windows
+		if (org.lwjgl.system.Platform.get() == org.lwjgl.system.Platform.WINDOWS) {
+			return null;
+		}
 		// Try running xkbcli to get keymap
 		String keymap = null;
 		try {
