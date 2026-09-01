@@ -11,7 +11,6 @@ import org.joml.Matrix3x2fStack;
 import org.lwjgl.glfw.GLFW;
 
 import dev.evvie.waylandcraft.WaylandCraft;
-import dev.evvie.waylandcraft.WaylandCraftCommon;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow;
 import dev.evvie.waylandcraft.bridge.WLCPopup;
 import dev.evvie.waylandcraft.bridge.WLCSurface;
@@ -25,19 +24,15 @@ import dev.evvie.waylandcraft.render.RenderUtils;
 import dev.evvie.waylandcraft.render.WindowFramebuffer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.MouseHandler;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.ImageWidget;
-import net.minecraft.client.gui.components.PopupScreen;
 import net.minecraft.client.gui.components.SpriteIconButton;
-import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.util.ARGB;
 
 public class WindowManagerScreen extends Screen {
 	
@@ -50,12 +45,6 @@ public class WindowManagerScreen extends Screen {
 	private Button hideButton;
 	private Button pinButton;
 	private Button itemButton;
-	private Button killButton;
-	private Button helpButton;
-
-	
-	private StringWidget captureModeMessage;
-	private ImageWidget captureModeSprite;
 	
 	private boolean resizeMode = false;
 	private WLCToplevel resizeToplevel = null;
@@ -71,8 +60,6 @@ public class WindowManagerScreen extends Screen {
 	private int areaWidth;
 	private int areaHeight;
 	private int guiScale;
-	
-	private boolean captureModeEnabled = false;
 	
 	private WLCToplevel focused = null;
 	private WLCToplevel lastFocused = null;
@@ -131,13 +118,8 @@ public class WindowManagerScreen extends Screen {
 				.build();
 		buttons.add(resizeButton);
 		
-		Component fullscreenComponent = Component.literal("Capture Mode").withColor(ARGB.color(255, 0, 0));
-		captureModeMessage = new StringWidget(leftMargin + 18, margin - 1, buttonWidth, buttonHeight, fullscreenComponent, font);
-		captureModeSprite = ImageWidget.sprite(15, 15, Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "capture"));
-		captureModeSprite.setPosition(leftMargin - 1, margin);
-		
 		hideButton = SpriteIconButton.builder(Component.literal("Hide"), this::onHidePressed, true)
-				.sprite(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "hide"), 15, 15)
+				.sprite(Identifier.fromNamespaceAndPath("waylandcraft", "hide"), 15, 15)
 				.size(22, 22)
 				.build();
 		hideButton.setPosition(3, topMargin);
@@ -146,7 +128,7 @@ public class WindowManagerScreen extends Screen {
 		buttons.add(hideButton);
 		
 		pinButton = SpriteIconButton.builder(Component.literal("Pin"), this::onPinPressed, true)
-				.sprite(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "pin"), 15, 15)
+				.sprite(Identifier.fromNamespaceAndPath("waylandcraft", "pin"), 15, 15)
 				.size(22, 22)
 				.build();
 		pinButton.setPosition(3, topMargin + 30);
@@ -155,7 +137,7 @@ public class WindowManagerScreen extends Screen {
 		buttons.add(pinButton);
 		
 		itemButton = SpriteIconButton.builder(Component.literal("Give Window Item"), this::onItemPressed, true)
-				.sprite(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "window"), 16, 16)
+				.sprite(Identifier.fromNamespaceAndPath("waylandcraft", "window"), 16, 16)
 				.size(22, 22)
 				.build();
 		itemButton.setPosition(3, topMargin + 60);
@@ -163,37 +145,11 @@ public class WindowManagerScreen extends Screen {
 		itemButton.setTooltipDelay(Duration.ofMillis(700));
 		buttons.add(itemButton);
 		
-		// Force-quit button: terminates the process tree behind the focused
-		// window. Uses the "hide" sprite tinted implicitly; a plain button keeps
-		// it independent of a dedicated sprite existing in the resource pack.
-		killButton = Button.builder(Component.literal("Kill"), this::onKillPressed)
-				.pos(3, topMargin + 90)
-				.size(22, 22)
-				.build();
-		killButton.setTooltip(Tooltip.create(Component.literal("Force Quit (terminate the app)")));
-		killButton.setTooltipDelay(Duration.ofMillis(700));
-		buttons.add(killButton);
-		
-		helpButton = SpriteIconButton.builder(Component.literal("Help"), this::onHelpPressed, true)
-
-				.sprite(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "help"), 15, 15)
-				.size(22, 22)
-				.build();
-		helpButton.setPosition(3, height - 22 - margin);
-		helpButton.setTooltip(Tooltip.create(Component.literal("Help")));
-		helpButton.setTooltipDelay(Duration.ofMillis(700));
-		buttons.add(helpButton);
-		
 		addRenderableWidget(grabButton);
 		addRenderableWidget(resizeButton);
 		addRenderableWidget(hideButton);
 		addRenderableWidget(pinButton);
 		addRenderableWidget(itemButton);
-		addRenderableWidget(killButton);
-		addRenderableWidget(helpButton);
-
-		addRenderableWidget(captureModeMessage);
-		addRenderableWidget(captureModeSprite);
 		
 		wlc.bridge.activateKeyboard();
 	}
@@ -236,33 +192,6 @@ public class WindowManagerScreen extends Screen {
 		wlc.itemManager.giveItem(focused);
 	}
 	
-	private void onKillPressed(Button button) {
-		if(focused == null) return;
-		// Force-terminate the app's whole process tree. The window disappears on
-		// a subsequent frame once the process dies; retain_toplevels then prunes
-		// the toplevel. Remove any Minecraft-side display we hold for it too.
-		WLCToplevel target = focused;
-		boolean killed = wlc.bridge.killToplevel(target);
-		WaylandCraftCommon.LOGGER.info("WindowManagerScreen: killToplevel returned {}", killed);
-		wlc.displays.removeIf((w) -> w.window == target);
-	}
-
-	
-	private void onHelpPressed(Button button) {
-		if(resizeMode) return;
-		String message = """
-				You can see your windows here.
-				Use ALT-Q to enable capture mode. It allows you to press escape \
-				in the windows without closing the screen. When active it also \
-				makes fullscreen windows properly take up the whole screen, \
-				disabling all of the other UI elements.
-				""";
-		minecraft.setScreen(new PopupScreen.Builder(this, Component.literal("Window Manager Help"))
-				.addMessage(Component.literal(message))
-				.addButton(Component.literal("Done"), (popup) -> popup.onClose())
-				.build());
-	}
-	
 	private void exitResizeMode() {
 		if(resizeToplevel != null && resizeToplevel.isAlive()) wlc.bridge.resizeToplevel(resizeToplevel, resizeWidth, resizeHeight);
 		
@@ -290,10 +219,10 @@ public class WindowManagerScreen extends Screen {
 	}
 	
 	@Override
-	public void extractRenderState(GuiGraphicsExtractor context, int i, int j, float f) {
-		super.extractBlurredBackground(context);
+	public void render(GuiGraphics context, int i, int j, float f) {
+		super.renderBlurredBackground(context);
 		
-		context.outline(leftMargin - 1, topMargin - 1, areaWidth + 2, areaHeight + 2, Color.white.getRGB());
+		context.renderOutline(leftMargin - 1, topMargin - 1, areaWidth + 2, areaHeight + 2, Color.white.getRGB());
 		
 		guiScale = (int) Minecraft.getInstance().getWindow().getGuiScale();
 		wlc.bridge.setOutputBounds(areaWidth * guiScale, areaHeight * guiScale);
@@ -346,8 +275,6 @@ public class WindowManagerScreen extends Screen {
 			
 			for(WindowElement element : windows) {
 				WindowFramebuffer buf = element.window.framebuffer;
-				if(buf == null) continue;
-				
 				int x = (int) element.x - buf.getXOff();
 				int y = (int) element.y - buf.getYOff();
 				int w = buf.getWidth();
@@ -367,7 +294,6 @@ public class WindowManagerScreen extends Screen {
 			hideButton.active = wlc.hasDisplayFor(focused);
 			pinButton.active = true;
 			itemButton.active = true;
-			killButton.active = true;
 		}
 		else {
 			grabButton.active = false;
@@ -375,31 +301,21 @@ public class WindowManagerScreen extends Screen {
 			hideButton.active = false;
 			pinButton.active = false;
 			itemButton.active = false;
-			killButton.active = false;
 		}
-
 		
 		buttons.forEach((b) -> b.visible = true);
 		selector.visible = true;
 		
-		boolean fullscreenWindowActive = focused != null && focused.fullscreen;
-		captureModeMessage.visible = false;
-		captureModeSprite.visible = false;
-		
-		if(fullscreenWindowActive && captureModeEnabled) {
+		if(focused != null && focused.fullscreen) {
 			buttons.forEach((b) -> b.visible = false);
 			selector.visible = false;
 		}
-		else if(captureModeEnabled) {
-			captureModeMessage.visible = true;
-			captureModeSprite.visible = true;
-		}
 		
-		super.extractRenderState(context, i, j, f);
+		super.render(context, i, j, f);
 	}
 	
 	@Override
-	public void extractBackground(GuiGraphicsExtractor guiGraphics, int i, int j, float f) {
+	public void renderBackground(GuiGraphics guiGraphics, int i, int j, float f) {
 	}
 	
 	private HoveredSurface surfaceUnderPointer(double x, double y) {
@@ -540,13 +456,8 @@ public class WindowManagerScreen extends Screen {
 	
 	@Override
 	public boolean keyPressed(KeyEvent event) {
-		if(event.key() == GLFW.GLFW_KEY_ESCAPE && !captureModeEnabled) {
+		if(event.key() == GLFW.GLFW_KEY_ESCAPE) {
 			this.onClose();
-			return true;
-		}
-		
-		if(event.key() == GLFW.GLFW_KEY_Q && event.modifiers() == GLFW.GLFW_MOD_ALT) {
-			captureModeEnabled = !captureModeEnabled;
 			return true;
 		}
 		
@@ -592,8 +503,8 @@ public class WindowManagerScreen extends Screen {
 		HoveredSurface hovered = surfaceUnderPointer(mouseX, mouseY);
 		
 		if(hovered != null) {
-			wlc.bridge.sendScroll(0, -scrollY);
-			wlc.bridge.sendScroll(1, -scrollX);
+			wlc.bridge.sendScroll(0, -scrollY * 10);
+			wlc.bridge.sendScroll(1, -scrollX * 10);
 			return true;
 		}
 		
@@ -614,7 +525,7 @@ public class WindowManagerScreen extends Screen {
 		float x;
 		float y;
 		
-		if(!toplevel.fullscreen || !captureModeEnabled) {
+		if(!toplevel.fullscreen) {
 			x = leftMargin * guiScale + Math.max(0, areaWidth * guiScale / 2 - toplevel.geometry.width() / 2);
 			y = topMargin * guiScale + Math.max(0, areaHeight * guiScale / 2 - toplevel.geometry.height() / 2);
 		}

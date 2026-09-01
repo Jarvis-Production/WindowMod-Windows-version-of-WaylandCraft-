@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import dev.evvie.waylandcraft.desktop.DesktopEntry;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractContainerWidget;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
@@ -34,7 +34,7 @@ public class AppListWidget extends AbstractContainerWidget {
 	private int contentHeight = 0;
 	
 	public AppListWidget(Consumer<DesktopEntry> launchAction, Component title) {
-		super(0, 0, 0, 0, title, AbstractContainerWidget.defaultSettings(0));
+		super(0, 0, 0, 0, title);
 		this.launchAction = launchAction;
 	}
 	
@@ -107,7 +107,7 @@ public class AppListWidget extends AbstractContainerWidget {
 	}
 	
 	@Override
-	protected void extractWidgetRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float partialTicks) {
+	protected void renderWidget(GuiGraphics context, int mouseX, int mouseY, float partialTicks) {
 		rearrangeChildren();
 		
 		int x = getX();
@@ -115,13 +115,13 @@ public class AppListWidget extends AbstractContainerWidget {
 		int width = ELEMENT_WIDTH;
 		int height = getHeight();
 		
-		context.outline(x - 1, y - 1, width + 2, height + 2, Color.black.getRGB());
-		context.outline(x - 2, y - 2, width + 4, height + 4, Color.black.getRGB());
+		context.renderOutline(x - 1, y - 1, width + 2, height + 2, Color.black.getRGB());
+		context.renderOutline(x - 2, y - 2, width + 4, height + 4, Color.black.getRGB());
 		
 		context.enableScissor(x, y, x + width, y + height);
 		
 		for(AppWidget child : children) {
-			child.extractRenderState(context, mouseX, mouseY, partialTicks);
+			child.render(context, mouseX, mouseY, partialTicks);
 		}
 		
 		context.disableScissor();

@@ -2,27 +2,17 @@ package dev.evvie.waylandcraft.settings;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
-
-import com.google.gson.Gson;
 
 import dev.evvie.waylandcraft.WaylandCraft;
-import dev.evvie.waylandcraft.WaylandCraftCommon;
 import net.minecraft.client.Minecraft;
 
 public class WaylandCraftSettingsManager {
 	
 	private final WaylandCraft wlc;
-	private final Gson gson = new Gson();
 	
 	private File settingsDir;
 	private File keymapFile;
-	private File settingsFile;
-	
-	private ArrayList<SettingResponder> responders = new ArrayList<SettingResponder>();
 	
 	public WaylandCraftSettingsManager(WaylandCraft wlc) {
 		this.wlc = wlc;
@@ -36,7 +26,6 @@ public class WaylandCraftSettingsManager {
 	}
 	
 	private void init() throws IOException {
-		/* Ensure settings directory */
 		settingsDir = new File(Minecraft.getInstance().gameDirectory, "waylandcraft");
 		if(!settingsDir.exists()) {
 			settingsDir.mkdir();
@@ -45,31 +34,6 @@ public class WaylandCraftSettingsManager {
 			throw new IOException("Waylandcraft settings directory exists but is not a directory");
 		}
 		
-		/* Ensure settings file */
-		boolean createSettings = false;
-		settingsFile = new File(settingsDir, "settings.json");
-		if(!settingsFile.exists()) {
-			settingsFile.createNewFile();
-			createSettings = true;
-		}
-		else if(!settingsFile.isFile()) {
-			throw new IOException("Waylandcraft settings.json exists but is not a file");
-		}
-		
-		if(createSettings) {
-			// Create default settings
-			wlc.settings = new WaylandCraftSettings();
-		}
-		else {
-			readSettings();
-		}
-		
-		// Ensure the current settings format is written to disk (i.e. when the settings change across versions)
-		writeSettings();
-	}
-	
-	public void loadKeymap() {
-		/* Read keymap override */
 		keymapFile = new File(settingsDir, "keymap.txt");
 		
 		String keymap = tryReadKeymapFromFile();
@@ -79,7 +43,7 @@ public class WaylandCraftSettingsManager {
 		
 		if(keymap != null) {
 			if(!wlc.bridge.setKeymapFromStr(keymap)) {
-				WaylandCraftCommon.LOGGER.error("Failed to load keymap!");
+				WaylandCraft.LOGGER.error("Failed to load keymap!");
 			}
 		}
 	}
@@ -95,13 +59,13 @@ public class WaylandCraftSettingsManager {
 			int exitCode = process.waitFor();
 			if(exitCode != 0) {
 				keymap = null;
-				WaylandCraftCommon.LOGGER.error("xkbcli exited with error " + exitCode);
+				WaylandCraft.LOGGER.error("xkbcli exited with error " + exitCode);
 			}
 		} catch (IOException | InterruptedException e) {
-			WaylandCraftCommon.LOGGER.error("xkbcli invoke failed!", e);
+			WaylandCraft.LOGGER.error("xkbcli invoke failed!", e);
 		}
 		if(keymap == null) {
-			WaylandCraftCommon.LOGGER.error("Failed to dump keymap using xkbcli");
+			WaylandCraft.LOGGER.error("Failed to dump keymap using xkbcli");
 		}
 		return keymap;
 	}
@@ -116,97 +80,9 @@ public class WaylandCraftSettingsManager {
 			stream.close();
 			return keymap;
 		} catch(IOException e) {
-			WaylandCraftCommon.LOGGER.info("Error reading keymap file!", e);
+			WaylandCraft.LOGGER.info("Error reading keymap file!", e);
 			return null;
 		}
-	}
-	
-	public void readSettings() {
-		try(FileReader reader = new FileReader(settingsFile)) {
-			wlc.settings = gson.fromJson(reader, WaylandCraftSettings.class);
-		} catch(IOException e) {
-			e.printStackTrace();
-		}
-	}
-	
-	public void writeSettings() {
-		String json = gson.toJson(wlc.settings, WaylandCraftSettings.class);
-		try(FileWriter writer = new FileWriter(settingsFile)) {
-			writer.write(json);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
-	
-	public void registerResponder(String setting, ISettingResponder responder) {
-		if(responders.stream().anyMatch((r) -> r.impl == responder)) return;
-		
-		responders.add(new SettingResponder(setting, responder));
-		responder.onChangeSetting(wlc.settings.getSettingAnyType(setting));
-	}
-	
-	private void updateResponders(String setting, Object value) {
-		for(SettingResponder r : responders) {
-			r.maybeFire(setting, value);
-		}
-	}
-	
-	public void unregisterResponder(ISettingResponder responder) {
-		responders.removeIf((r) -> r.impl == responder);
-	}
-	
-	// Set an int setting and write it to file
-	public void setIntSetting(String name, int value) {
-		wlc.settings.setIntSetting(name, value);
-		updateResponders(name, (Integer) value);
-		writeSettings();
-	}
-	
-	// Set a boolean setting and write it to file
-	public void setBooleanSetting(String name, boolean value) {
-		wlc.settings.setBooleanSetting(name, value);
-		updateResponders(name, (Boolean) value);
-		writeSettings();
-	}
-	
-	// Set a text setting and write it to file
-	public void setTextSetting(String name, String value) {
-		wlc.settings.setTextSetting(name, value);
-		updateResponders(name, value);
-		writeSettings();
-	}
-	
-	// Get an int setting
-	public int getIntSetting(String name) {
-		return wlc.settings.getIntSetting(name);
-	}
-	
-	// Set a boolean setting
-	public boolean getBooleanSetting(String name) {
-		return wlc.settings.getBooleanSetting(name);
-	}
-	
-	// Set a text setting
-	public String getTextSetting(String name) {
-		return wlc.settings.getTextSetting(name);
-	}
-	
-	private static class SettingResponder {
-		
-		public final String settingName;
-		public final ISettingResponder impl;
-		
-		public SettingResponder(String settingName, ISettingResponder impl) {
-			this.settingName = settingName;
-			this.impl = impl;
-		}
-		
-		protected void maybeFire(String setting, Object value) {
-			if(setting.equals(this.settingName)) {
-				impl.onChangeSetting(value);
-			}
-		}
-		
 	}
 	
 }

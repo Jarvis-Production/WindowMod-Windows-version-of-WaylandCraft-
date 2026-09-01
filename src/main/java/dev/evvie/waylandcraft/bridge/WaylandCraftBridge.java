@@ -14,16 +14,14 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWNativeEGL;
-import org.lwjgl.system.Platform;
 
-import dev.evvie.waylandcraft.WaylandCraftCommon;
+import dev.evvie.waylandcraft.CursorShape;
+import dev.evvie.waylandcraft.WaylandCraft;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow.SurfaceGeometry;
 import dev.evvie.waylandcraft.desktop.RawDesktopEntry;
 import dev.evvie.waylandcraft.render.BufferTexture.DmabufTexture;
 import dev.evvie.waylandcraft.render.WindowFramebuffer;
-import dev.evvie.waylandcraft.utils.CursorShape;
-import net.minecraft.util.profiling.Profiler;
-import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraft.client.Minecraft;
 
 public class WaylandCraftBridge {
 	
@@ -32,7 +30,6 @@ public class WaylandCraftBridge {
 	private ArrayList<WLCPopup> popups = new ArrayList<WLCPopup>();
 	private ArrayList<WLCSurface> surfaces = new ArrayList<WLCSurface>();
 	private ArrayList<DmabufTexture> dmabufs = new ArrayList<DmabufTexture>();
-	private ArrayList<WindowFramebuffer> framebuffers = new ArrayList<WindowFramebuffer>();
 	
 	public IconSurface dndIcon = null;
 	
@@ -45,14 +42,13 @@ public class WaylandCraftBridge {
 	
 	static {
 		boolean loaded = false;
-		InputStream inputStream = openNativeLibraryFromJar();
+		InputStream inputStream = WaylandCraftBridge.class.getResourceAsStream("/libwaylandcraft.so");
 		if(inputStream != null) {
 			try {
 				byte[] data = inputStream.readAllBytes();
 				inputStream.close();
 				
-				String suffix = Platform.get() == Platform.WINDOWS ? ".dll" : ".so";
-				File temp = File.createTempFile("waylandcraft-", "-libwaylandcraft" + suffix);
+				File temp = File.createTempFile("waylandcraft-", "-libwaylandcraft.so");
 				temp.deleteOnExit();
 				
 				FileOutputStream outputStream = new FileOutputStream(temp);
@@ -62,136 +58,52 @@ public class WaylandCraftBridge {
 				System.load(temp.getAbsolutePath());
 				loaded = true;
 				
-				WaylandCraftCommon.LOGGER.info("Loaded native library from jar");
+				WaylandCraft.LOGGER.info("Loaded native library from jar");
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
 		}
 		
 		if(!loaded) {
-			WaylandCraftCommon.LOGGER.info("Native library could not be loaded from jar. Attempting to load from system");
+			WaylandCraft.LOGGER.info("Native library could not be loaded from jar. Attempting to load from system");
 			System.loadLibrary("waylandcraft");
 		}
 	}
 	
-	private static InputStream loadResource(String path) {
-		WaylandCraftCommon.LOGGER.info("Looking for '" + path + "'...");
-		return WaylandCraftBridge.class.getResourceAsStream(path);
-	}
-	
-	private static InputStream openNativeLibraryFromJar() {
-		InputStream stream = null;
-		
-		if(Platform.get() == Platform.WINDOWS) {
-			stream = loadResource("/waylandcraft.dll");
-			if(stream != null) return stream;
-			stream = loadResource("/libwaylandcraft.dll");
-			if(stream != null) return stream;
-		}
-		else {
-			stream = loadResource("/libwaylandcraft.so");
-			if(stream != null) return stream;
-		}
-		
-		String arch;
-		switch(Platform.getArchitecture()) {
-		case X64: arch = "x86_64"; break;
-		case ARM64: arch = "arm64"; break;
-		default: arch = null; break;
-		}
-		
-		if(arch != null) {
-			if(Platform.get() == Platform.WINDOWS) {
-				stream = loadResource("/libwaylandcraft-windows-gnu-" + arch + ".dll");
-				if(stream != null) return stream;
-			}
-			else {
-				String platform = "linux-gnu-" + arch;
-				stream = loadResource("/libwaylandcraft-" + platform + ".so");
-				if(stream != null) return stream;
-			}
-		}
-		
-		return null;
-	}
-	
-	private WaylandCraftBridge(long instance) {
-		this.instance = instance;
+	private WaylandCraftBridge(long handle) {
+		this.instance = handle;
 	}
 	
 	public static WaylandCraftBridge start() {
-		long eglDisplay = 0;
-		long glfwGetProcAddress = 0;
-
-		if(Platform.get() == Platform.LINUX) {
-			eglDisplay = GLFWNativeEGL.glfwGetEGLDisplay();
-			if(eglDisplay == 0) {
-				throw new RuntimeException("Failed to get EGL display!");
-			}
-			glfwGetProcAddress = GLFW.Functions.GetProcAddress;
-		}
-
-		long handle = init(glfwGetProcAddress, eglDisplay);
-		WaylandCraftBridge bridge = new WaylandCraftBridge(handle);
-
-		// Pass GLFW HWND to native for SetForegroundWindow input forwarding
-		if(Platform.get() == Platform.WINDOWS) {
-			long glfwWindow = GLFW.glfwGetCurrentContext();
-			long win32Hwnd = org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window(glfwWindow);
-			setWin32Hwnd(handle, win32Hwnd);
-		}
-
-		// Add shutdown thread to clean up resources on normal exit
-		Runtime.getRuntime().addShutdownHook(new Thread(bridge::shutdownHook));
+		long eglDisplay = GLFWNativeEGL.glfwGetEGLDisplay();
+		long eglConfig = GLFWNativeEGL.glfwGetEGLConfig(Minecraft.getInstance().getWindow().handle());
 		
-		return bridge;
+		if(eglDisplay == 0 || eglConfig == 0) {
+			throw new RuntimeException("Failed to get EGL display or config!");
+		}
+		
+		long handle = init(GLFW.Functions.GetProcAddress, eglDisplay);
+		return new WaylandCraftBridge(handle);
 	}
 	
-	private void shutdownHook() {
-		shutdown(instance);
-		instance = 0;
-	}
-	
-	protected WLCToplevel getOrCreateToplevel(long topLevelHandle) {
+	protected WLCToplevel getOrCreateToplevel(long handle) {
 		for(WLCToplevel toplevel : toplevels) {
-			if(toplevel.getHandle() == topLevelHandle) {
-				// If surface has handle 0 (previous toplevelSurface returned 0),
-				// re-query each frame until a valid surface is acquired
-				if(toplevel.surface != null && toplevel.surface.getHandle() == 0) {
-					long surfaceHandle = toplevelSurface(this.instance, topLevelHandle);
-					if(surfaceHandle != 0) {
-						WaylandCraftCommon.LOGGER.info("[bridge] getOrCreateToplevel: re-acquired surface 0x{} for toplevel 0x{}",
-							Long.toHexString(surfaceHandle), Long.toHexString(topLevelHandle));
-						// Remove old zero-handle surface from the surfaces list to avoid leaks
-						surfaces.remove(toplevel.surface);
-						toplevel.surface = getOrCreateSurface(surfaceHandle);
-					}
-				}
-				return toplevel;
-			}
+			if(toplevel.getHandle() == handle) return toplevel;
 		}
-		WLCToplevel toplevel = new WLCToplevel(topLevelHandle);
-
-		long surfaceHandle = toplevelSurface(this.instance, topLevelHandle);
-		if(surfaceHandle == 0) {
-			WaylandCraftCommon.LOGGER.warn("[bridge] toplevelSurface returned 0 for handle 0x{}!", Long.toHexString(topLevelHandle));
-		} else {
-			WaylandCraftCommon.LOGGER.info("[bridge] getOrCreateToplevel: toplevelHandle=0x{} surfaceHandle=0x{}",
-				Long.toHexString(topLevelHandle), Long.toHexString(surfaceHandle));
-		}
+		WLCToplevel toplevel = new WLCToplevel(handle);
+		
+		long surfaceHandle = toplevelSurface(this.instance, handle);
 		WLCSurface surface = getOrCreateSurface(surfaceHandle);
 		toplevel.surface = surface;
-
+		
 		toplevels.add(toplevel);
 		return toplevel;
 	}
 	
 	public WLCToplevel[] getNewToplevels() {
-		// Remove dead toplevels before returning (freed between detection and consumption)
-		newToplevels.removeIf(t -> !t.isAlive());
 		WLCToplevel[] toplevels = newToplevels.toArray(WLCToplevel[]::new);
 		newToplevels.clear();
-
+		
 		return toplevels;
 	}
 	
@@ -257,27 +169,14 @@ public class WaylandCraftBridge {
 		this.popups = popups_new;
 	}
 	
-	private void updateDmabufs() {
-		long[] remainingHandles = dmabufs(instance);
+	private void deleteNonExistingDmabufs(long[] remainingHandles) {
 		ArrayList<DmabufTexture> dmabufs_new = new ArrayList<DmabufTexture>();
 		for(DmabufTexture dmabuf : this.dmabufs) {
-			// If the dmabuf texture is not attached to a real wl_buffer anymore, free the EGL resources
-			boolean retained = ArrayUtils.contains(remainingHandles, dmabuf.handle);
-			if(!retained) dmabuf.freeEGL();
-			
-			// Remove it from the list and free the texture if no longer attached to any surface
-			boolean used = false;
-			for(WLCSurface surface : surfaces) {
-				if(surface.getBuffer() == dmabuf) {
-					used = true;
-					break;
-				}
-			}
-			if(retained || used) {
+			if(ArrayUtils.contains(remainingHandles, dmabuf.handle)) {
 				dmabufs_new.add(dmabuf);
 			}
 			else {
-				dmabuf.doReleaseTexure();
+				dmabuf.free();
 			}
 		}
 		this.dmabufs = dmabufs_new;
@@ -316,19 +215,8 @@ public class WaylandCraftBridge {
 	}
 	
 	public void update() {
-		ProfilerFiller profiler = Profiler.get();
-		profiler.push("wayland");
-		
 		// Update wayland clients
-		profiler.push("update clients");
-		long _t0 = System.nanoTime();
 		update(this.instance);
-		double _msNative = (System.nanoTime() - _t0) / 1_000_000.0;
-		if(_msNative > 4.0) {
-			WaylandCraftCommon.LOGGER.info("[windowmod]   native update(instance) took {} ms", String.format("%.1f", _msNative));
-		}
-		profiler.pop();
-
 		
 		// Find all available toplevels and delete ones that no longer exist
 		long[] toplevelHandles = toplevels(instance);
@@ -360,13 +248,12 @@ public class WaylandCraftBridge {
 			surface.visited = false;
 		}
 		
-		profiler.push("update surface tree");
 		// Create new toplevels when necessary
 		// Update surface tree geometry and properties of all toplevels
 		for(long handle : toplevelHandles) {
 			WLCToplevel toplevel = getOrCreateToplevel(handle);
 			WLCSurface root = toplevel.getSurfaceTree();
-			toplevel.lastChild = updateSurfaceTree(this.instance, root);
+			toplevel.lastChild = updateSurfaceTree(root);
 			
 			updateGeometry(toplevel);
 			toplevel.title = toplevelTitle(toplevel.getHandle());
@@ -392,26 +279,27 @@ public class WaylandCraftBridge {
 			popup.offsetY = offset[1];
 			
 			WLCSurface root = popup.getSurfaceTree();
-			popup.lastChild = updateSurfaceTree(this.instance, root);
+			popup.lastChild = updateSurfaceTree(root);
 			updateGeometry(popup);
 		}
 		
 		long dndIconHandle = dndIcon(instance);
-		if(dndIconHandle != 0) {
-			WLCSurface dndIconSurface = getOrCreateSurface(dndIconHandle);
-			if(dndIcon != null && dndIcon.surface != dndIconSurface) dndIcon = null;
-			if(dndIcon == null) dndIcon = new IconSurface(dndIconSurface);
-			
-			updateSurfaceData(instance, dndIcon.surface);
-			dndIcon.surface.visited = true;
+		if(dndIconHandle == 0) {
+			if(dndIcon != null && dndIcon.framebuffer != null) dndIcon.framebuffer.free();
+			dndIcon = null;
 		}
 		else {
-			dndIcon = null;
+			dndIcon = new IconSurface(getOrCreateSurface(dndIconHandle));
+		}
+		
+		if(dndIcon != null) {
+			updateSurfaceData(instance, dndIcon.surface);
+			dndIcon.surface.visited = true;
+			dndIcon.render();
 		}
 		
 		// All surface trees have now been walked. Now delete all unvisited surfaces
 		deleteUnvisitedSurfaces();
-		profiler.pop();
 		
 		// Resolve surface parent handles to actual surfaces
 		for(WLCSurface surface : surfaces) {
@@ -425,7 +313,6 @@ public class WaylandCraftBridge {
 		
 		List<WLCAbstractWindow> allWindows = Stream.of(toplevels, popups).flatMap((l) -> l.stream()).collect(Collectors.toList());
 		
-		profiler.push("update surface data");
 		// Update all surface buffers
 		for(WLCAbstractWindow window : allWindows) {
 			WLCSurface root = window.getSurfaceTree();
@@ -434,7 +321,6 @@ public class WaylandCraftBridge {
 				calculateSubpos(surface);
 			}
 		}
-		profiler.pop();
 		
 		for(WLCToplevel toplevel : toplevels) {
 			boolean mapped = toplevel.isMapped();
@@ -444,13 +330,13 @@ public class WaylandCraftBridge {
 			toplevel.wasMapped = mapped;
 		}
 		
-		profiler.push("framebuffer");
-		updateFramebuffers();
-		profiler.pop();
-
-
+		// Render windows
+		for(WLCAbstractWindow window : allWindows) {
+			if(window.framebuffer != null) window.framebuffer.free();
+			window.framebuffer = WindowFramebuffer.renderSurfaceTree(window.getSurfaceTree());
+		}
 		
-		updateDmabufs();
+		deleteNonExistingDmabufs(dmabufs(instance));
 		
 		updateFocusOrder();
 		
@@ -458,44 +344,6 @@ public class WaylandCraftBridge {
 		for(WLCSurface surface : surfaces) {
 			sendFrame(surface.getHandle());
 		}
-		
-		profiler.pop();
-	}
-	
-	private void updateFramebuffers() {
-		List<WLCAbstractWindow> allWindows = Stream.of(toplevels, popups).flatMap((l) -> l.stream()).collect(Collectors.toList());
-
-		// Render windows
-		for(WLCAbstractWindow window : allWindows) {
-			if(window.framebuffer == null) {
-				window.framebuffer = new WindowFramebuffer(window.getSurfaceTree());
-				framebuffers.add(window.framebuffer);
-			}
-			window.framebuffer.render();
-		}
-		
-		// Render dnd icon
-		if(dndIcon != null) {
-			if(dndIcon.framebuffer == null) {
-				dndIcon.framebuffer = new WindowFramebuffer(dndIcon.surface);
-				framebuffers.add(dndIcon.framebuffer);
-			}
-			dndIcon.framebuffer.render();
-		}
-		
-		// Cleanup unused framebuffers
-		ArrayList<WindowFramebuffer> usedFramebuffers = new ArrayList<WindowFramebuffer>();
-		for(WindowFramebuffer framebuffer : framebuffers) {
-			if(framebuffer.surfaceTree.isAlive()) {
-				usedFramebuffers.add(framebuffer);
-			}
-			else {
-				framebuffer.destroy();
-			}
-		}
-		framebuffers.retainAll(usedFramebuffers);
-		
-		WindowFramebuffer.endFrame();
 	}
 	
 	private void updateGeometry(WLCAbstractWindow window) {
@@ -546,10 +394,6 @@ public class WaylandCraftBridge {
 	
 	public String getSocket() {
 		return socket(this.instance);
-	}
-	
-	public @Nullable String getX11Display() {
-		return x11Display(this.instance);
 	}
 	
 	public boolean inputRegionContains(WLCSurface surface, double x, double y) {
@@ -666,15 +510,6 @@ public class WaylandCraftBridge {
 		toplevelFullscreen(instance, toplevel.getHandle());
 	}
 	
-	// Force-terminate the process (and its whole descendant tree) that owns this
-	// toplevel's window. Used by the "Force Quit" button to close an app whose
-	// window is hung or won't close normally. Returns true if at least one
-	// process was terminated.
-	public boolean killToplevel(WLCToplevel toplevel) {
-		return killToplevel(instance, toplevel.getHandle());
-	}
-
-	
 	public Integer checkMoveRequest() {
 		if(lastMoveRequestSerial == null) return null;
 		int serial = lastMoveRequestSerial.intValue();
@@ -715,16 +550,12 @@ public class WaylandCraftBridge {
 		return loadDesktopEntries(instance);
 	}
 	
-	public boolean renderSVG(File file, int width, int height, long bufferPtr) {
-		return renderSVG(file.getAbsolutePath(), width, height, bufferPtr);
+	public boolean renderSVG(File file, int width, int height, long ptr) {
+		return renderSVG(file.getAbsolutePath(), width, height, ptr);
 	}
 	
 	public boolean execApp(String appId) {
 		return execApp(instance, appId);
-	}
-	
-	public void setPreferredTerminal(String cmd) {
-		setPreferredTerminal(instance, cmd);
 	}
 	
 	public void setKeymapDefault() {
@@ -763,23 +594,20 @@ public class WaylandCraftBridge {
 	public static record ResizeRequest(int serial, int edges) {}
 	
 	private static native long init(long glfwGetProcAddress, long eglDisplay);
-	private static native void setWin32Hwnd(long instance, long hwnd);
-	private static native void shutdown(long instance);
 	private static native void update(long instance);
 	private static native String socket(long instance);
-	private static native String x11Display(long instance);
-	private static native void sendFrame(long surfaceHandle);
+	private static native void sendFrame(long handle);
 	
 	private static native void updateSurfaceData(long instance, WLCSurface surface);
 	
 	private static native long[] toplevels(long instance);
-	private static native long toplevelSurface(long instance, long topLevelHandle);
-	private static native String toplevelTitle(long topLevelHandle);
-	private static native String toplevelAppID(long topLevelHandle);
+	private static native long toplevelSurface(long instance, long handle);
+	private static native String toplevelTitle(long handle);
+	private static native String toplevelAppID(long handle);
 	// Resize toplevel
-	private static native void toplevelResize(long topLevelHandle, int width, int height, boolean interactive);
+	private static native void toplevelResize(long handle, int width, int height, boolean interactive);
 	// Resize toplevel override, keep maximized and fullscreen state, stop interactive resize
-	private static native void toplevelResizeOvr(long topLevelHandle, int width, int height);
+	private static native void toplevelResizeOvr(long handle, int width, int height);
 	
 	// Collect all toplevels that have sent a minimize request and clear the list
 	private static native long[] minimizeReq(long instance);
@@ -800,33 +628,29 @@ public class WaylandCraftBridge {
 	// All toplevels that are currently in fullscreen
 	private static native long[] fullscreened(long instance);
 	
-	private static native void toplevelMaximize(long instance, long topLevelHandle);
-	private static native void toplevelFullscreen(long instance, long topLevelHandle);
-	// Force-kill the process tree owning the toplevel's window. Returns true if
-	// at least one process was terminated.
-	private static native boolean killToplevel(long instance, long topLevelHandle);
-
+	private static native void toplevelMaximize(long instance, long handle);
+	private static native void toplevelFullscreen(long instance, long handle);
 	
 	private static native long[] popups(long instance);
-	private static native long popupSurface(long instance, long topLevelHandle);
+	private static native long popupSurface(long instance, long handle);
 	// Query the parent of a popup
 	// Returned handle is a handle either to a toplevel or another popup
-	private static native long popupParent(long instance, long topLevelHandle);
+	private static native long popupParent(long instance, long handle);
 	// Query popup local offset coordinates
 	// Returns two-element list containing x,y
-	private static native int[] popupOffset(long popupHandle);
+	private static native int[] popupOffset(long handle);
 	
 	// Query the xdg_surface window geometry of a toplevel or popup.
 	// handle should be the handle to the root WLCSurface
 	// Returns four-element array containing x,y,width,height which could be null
-	private static native int[] surfaceXDGGeometry(long surfaceHandle);
+	private static native int[] surfaceXDGGeometry(long handle);
 	
 	private static native long[] dmabufs(long instance);
 	
 	// Updates the surface tree given by the root surface
 	// This changes the doubly linked list of the WLCSurfaces.
 	// The returned surface is the last (most deeply nested) child
-	private native WLCSurface updateSurfaceTree(long instance, WLCSurface root);
+	private native WLCSurface updateSurfaceTree(WLCSurface root);
 	
 	// Check if point in surface input region
 	private static native boolean checkInputRegion(long surfaceHandle, double x, double y);
@@ -835,12 +659,12 @@ public class WaylandCraftBridge {
 	private static native void pointerMotion(long instance, double x, double y);
 	
 	// Create pointer motion event
-	private static native void pointerMotionFocus(long instance, long surfaceHandle, double x, double y);
+	private static native void pointerMotionFocus(long instance, long handle, double x, double y);
 	
 	// Send relative pointer motion to surface with pointer focus
 	private static native void pointerRelMotion(long instance, double dx, double dy);
 	
-	private static native boolean maybePointerLock(long instance, long surfaceHandle);
+	private static native boolean maybePointerLock(long instance, long handle);
 	
 	private static native void pointerUnlock(long instance);
 	
@@ -877,17 +701,16 @@ public class WaylandCraftBridge {
 	// Update virtual output maximum window bounds
 	private static native void outputSetBounds(long instance, int width, int height);
 	
-	private static native void freeSurface(long instance, long surfaceHandle);
-	private static native void freeToplevel(long instance, long toplevelHandle);
-	private static native void freePopup(long instance, long popupHandle);
+	private static native void freeSurface(long instance, long handle);
+	private static native void freeToplevel(long instance, long handle);
+	private static native void freePopup(long instance, long handle);
 	
 	private static native RawDesktopEntry loadDesktopEntry(long instance, String path);
 	private static native RawDesktopEntry[] loadDesktopEntries(long instance);
 	
-	private static native boolean renderSVG(String path, int width, int height, long bufferPtr);
+	private static native boolean renderSVG(String path, int width, int height, long ptr);
 	
 	private static native boolean execApp(long instance, String appId);
-	private static native void setPreferredTerminal(long instance, String cmd);
 	
 	private static native void setKeymapDefault(long instance);
 	private static native String exportKeymap(long instance);
@@ -897,7 +720,7 @@ public class WaylandCraftBridge {
 	private static native boolean checkDndActive(long instance);
 	private static native void dndCancel(long instance);
 	private static native void dndDrop(long instance);
-	private static native void dndMotion(long instance, long surfaceHandle, double x, double y);
+	private static native void dndMotion(long instance, long surface, double x, double y);
 	private static native long dndIcon(long instance);
 	
 }

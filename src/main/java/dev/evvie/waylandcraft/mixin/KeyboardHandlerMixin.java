@@ -26,21 +26,12 @@ public class KeyboardHandlerMixin {
 	
 	@Inject(method = "keyPress", at = @At("HEAD"), cancellable = false)
 	public void onPressGlobal(long windowHandle, int action, KeyEvent event, CallbackInfo info) {
-		if(WaylandCraft.instance.bridge == null) return;
-		
 		int scancode = WaylandCraft.correctScancode(event.scancode());
-		if(action != GLFW.GLFW_PRESS && action != GLFW.GLFW_RELEASE) return;
 		
-		// Only forward key state to the focused app when keyboard capture is
-		// active. The actual text entry is driven by onKeyPress ->
-		// pressKey/releaseKey (which routes into keyboard_key -> keyboard_update
-		// natively). Forwarding here unconditionally would either double-type
-		// every character or send keys to apps while the player is just playing
-		// the game.
-		if(WaylandCraft.instance.keyboardCaptureMode == WaylandCraft.KeyboardCaptureMode.NONE) return;
+		if(action != GLFW.GLFW_PRESS && action != GLFW.GLFW_RELEASE) return;
+		if(WaylandCraft.instance.bridge == null) return;
 		
 		WaylandCraft.instance.bridge.internalKeyUpdate(scancode, action == GLFW.GLFW_PRESS);
 	}
-
 	
 }

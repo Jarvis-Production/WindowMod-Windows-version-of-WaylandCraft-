@@ -11,4 +11,9 @@ public class IconSurface {
 		this.surface = surface;
 	}
 	
+	public void render() {
+		if(framebuffer != null) framebuffer.free();
+		framebuffer = WindowFramebuffer.renderSurfaceTree(surface);
+	}
+	
 }

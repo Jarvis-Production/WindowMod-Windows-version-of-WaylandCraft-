@@ -51,3 +51,6 @@ replay_*.log
 
 # directory used by actions runner
 native-libs
+
+# embedded duplicate project
+WindowMod (Windows version of WaylandCraft)/

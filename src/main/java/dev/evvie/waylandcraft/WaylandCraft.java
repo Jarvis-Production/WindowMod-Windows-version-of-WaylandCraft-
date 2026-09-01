@@ -1,17 +1,17 @@
 package dev.evvie.waylandcraft;
 
-
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.stream.Stream;
 
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.system.Platform;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
+import dev.evvie.waylandcraft.WindowDisplay.DisplayHitResult;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow.SurfaceGeometry;
 import dev.evvie.waylandcraft.bridge.WLCPopup;
@@ -21,8 +21,6 @@ import dev.evvie.waylandcraft.bridge.WaylandCraftBridge;
 import dev.evvie.waylandcraft.bridge.WaylandCraftBridge.ResizeRequest;
 import dev.evvie.waylandcraft.bridge.WaylandCraftBridge.Size;
 import dev.evvie.waylandcraft.desktop.XDGDesktopManager;
-import dev.evvie.waylandcraft.displays.WindowDisplay;
-import dev.evvie.waylandcraft.displays.WindowDisplay.DisplayHitResult;
 import dev.evvie.waylandcraft.grabs.DNDGrab;
 import dev.evvie.waylandcraft.grabs.MoveGrab;
 import dev.evvie.waylandcraft.grabs.PointerGrabMap;
@@ -31,25 +29,22 @@ import dev.evvie.waylandcraft.grabs.ResizeGrab;
 import dev.evvie.waylandcraft.gui.AppLauncherScreen;
 import dev.evvie.waylandcraft.gui.WaylandHudRenderer;
 import dev.evvie.waylandcraft.gui.WindowManagerScreen;
-import dev.evvie.waylandcraft.item.WindowHandle;
 import dev.evvie.waylandcraft.item.WindowItem;
 import dev.evvie.waylandcraft.item.WindowItemManager;
 import dev.evvie.waylandcraft.render.WindowInHandRenderer;
 import dev.evvie.waylandcraft.render.WindowInItemFrameRenderer;
 import dev.evvie.waylandcraft.render.model.WindowItemModel;
-import dev.evvie.waylandcraft.settings.WaylandCraftSettings;
 import dev.evvie.waylandcraft.settings.WaylandCraftSettingsManager;
-import dev.evvie.waylandcraft.utils.CursorShape;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionContext;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldExtractionContext;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PacketSender;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.Camera;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -57,25 +52,19 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.item.Item.TooltipContext;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
-public class WaylandCraft implements ClientModInitializer {
-	
-	private static final KeyMapping.Category KEYBIND_CATEGORY = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "keys"));
+public class WaylandCraft implements ModInitializer, ClientModInitializer {
+	public static final String MOD_ID = "waylandcraft";
+	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+	private static final KeyMapping.Category KEYBIND_CATEGORY = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "keys"));
 	
 	public static WaylandCraft instance;
-	public static boolean fallbackMode = false;
-	
-	public WaylandCraftSettingsManager settingsManager;
-	public WaylandCraftSettings settings;
 	
 	public WaylandCraftBridge bridge = null;
 	public String waylandSocket = "";
-	public @Nullable String x11Display = null;
 	
 	public ArrayList<WindowDisplay> displays = new ArrayList<WindowDisplay>();
 	
@@ -84,8 +73,9 @@ public class WaylandCraft implements ClientModInitializer {
 	
 	public WLCToplevel pinnedToplevel = null;
 	
-	public WindowItemManager itemManager = new WindowItemManager();
+	public WindowItemManager itemManager = new WindowItemManager(this);
 	public XDGDesktopManager xdgManager;
+	public WaylandCraftSettingsManager settingsManager;
 	
 	public KeyMapping keyOpenScreen;
 	public KeyMapping keyOpenAppLauncher;
@@ -105,77 +95,57 @@ public class WaylandCraft implements ClientModInitializer {
 	
 	public PointerCapture pointerCapture = null;
 	
-	private boolean playerUsingWindowItem = false;
-	private boolean playerWasUsingWindowItem = false;
+	public boolean playerUsingWindowItem = false;
 	
 	public @Nullable CursorShape cursorShape = null;
 	
 	@Override
+	public void onInitialize() {
+		WindowItem.register();
+	}
+	
+	@Override
 	public void onInitializeClient() {
-		WaylandCraftCommon.LOGGER.info("Initializing WaylandCraft");
+		LOGGER.info("Initializing WindowMod (WaylandCraft Windows port) by JarvisProduction - для связи: jarvisproductio (дискорд)");
 		
 		instance = this;
 		
-		keyOpenScreen = KeyMappingHelper.registerKeyMapping(new KeyMapping("waylandcraft.key.windowManager", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_B, KEYBIND_CATEGORY));
-		keyOpenAppLauncher = KeyMappingHelper.registerKeyMapping(new KeyMapping("waylandcraft.key.appLauncher", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, KEYBIND_CATEGORY));
-		keyCaptureKeyboard = KeyMappingHelper.registerKeyMapping(new KeyMapping("waylandcraft.key.captureKeyboard", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G, KEYBIND_CATEGORY));
+		keyOpenScreen = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.windowManager", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_B, KEYBIND_CATEGORY));
+		keyOpenAppLauncher = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.appLauncher", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, KEYBIND_CATEGORY));
+		keyCaptureKeyboard = KeyBindingHelper.registerKeyBinding(new KeyMapping("key.captureKeyboard", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G, KEYBIND_CATEGORY));
+		
+		WorldRenderEvents.AFTER_ENTITIES.register(this::renderWorld);
+		WorldRenderEvents.END_EXTRACTION.register(this::updateWorld);
+		ClientTickEvents.END_CLIENT_TICK.register(this::onClientTick);
+		ServerTickEvents.START_WORLD_TICK.register(itemManager::onServerTick);
+		ClientPlayConnectionEvents.JOIN.register(this::onClientJoin);
 		
 		WindowItemModel.register();
-		
-		settingsManager = new WaylandCraftSettingsManager(this);
-		
-		if(Platform.get() != Platform.LINUX && Platform.get() != Platform.WINDOWS) {
-			WaylandCraftCommon.LOGGER.error("Invalid platform detected! Most mod features will be disabled");
-			WaylandCraft.fallbackMode = true;
-			return;
-		}
-		
-		LevelRenderEvents.COLLECT_SUBMITS.register(this::renderWorld);
-		LevelRenderEvents.END_EXTRACTION.register(this::updateWorld);
-		ClientTickEvents.END_CLIENT_TICK.register(this::onClientTick);
-		ClientPlayConnectionEvents.JOIN.register(this::onClientJoin);
-		ItemTooltipCallback.EVENT.register(this::addWindowItemTooltip);
-		ClientTickEvents.START_CLIENT_TICK.register(itemManager);
-		
-		WaylandCraftCommon.instance.windowItemInteractionProvider = itemManager;
-		
 		hudRenderer.register();
 	}
 	
 	/* Update bridge and clients. May be called at any state of the game, even outside of a level
-	 * Called after game render in Minecraft::runTick
+	 * Called before game render in Minecraft::runTick
 	 */
 	public void update() {
-		if(fallbackMode) return;
-		
 		if(bridge == null) {
 			bridge = WaylandCraftBridge.start();
 			waylandSocket = bridge.getSocket();
-			x11Display = bridge.getX11Display();
 			xdgManager = new XDGDesktopManager(this);
-			registerSettingsResponders();
-			settingsManager.loadKeymap();
+			settingsManager = new WaylandCraftSettingsManager(this);
 			
-			WaylandCraftCommon.LOGGER.info("WindowMod started on socket " + waylandSocket);
-			if(x11Display != null) WaylandCraftCommon.LOGGER.info("Xwayland started on " + x11Display);
+			LOGGER.info("Server started on " + waylandSocket);
 		}
 		bridge.update();
 	}
 	
-	private void registerSettingsResponders() {
-		settingsManager.registerResponder(WaylandCraftSettings.TERMINAL_CHOICE, (value) -> {
-			bridge.setPreferredTerminal((String) value);
-		});
-	}
-	
-	public void renderWorld(LevelRenderContext ctx) {
+	public void renderWorld(WorldRenderContext ctx) {
 		if(bridge == null) return;
-
+		
 		displays.forEach((d) -> d.render(ctx));
 	}
 	
-	public void updateWorld(LevelExtractionContext ctx) {
-		if(bridge == null) return;
+	public void updateWorld(WorldExtractionContext ctx) {
 		for(WLCPopup popup : bridge.getMappedPopups()) {
 			WLCAbstractWindow root = popup;
 			while((root = ((WLCPopup) root).getParent()) instanceof WLCPopup);
@@ -202,21 +172,16 @@ public class WaylandCraft implements ClientModInitializer {
 		
 		itemManager.giveItemsIfMissing(bridge.getNewToplevels());
 		
-		// Auto-create displays for all mapped toplevels that don't have one
-		for(WLCToplevel toplevel : bridge.getMappedToplevels()) {
-			if(!hasDisplayFor(toplevel)) {
-				WindowDisplay display = getOrCreateDisplay(toplevel);
-				display.anchorDistance = 4.0;
-			}
-		}
-		
 		boolean inWMScreen = Minecraft.getInstance().screen instanceof WindowManagerScreen;
-
+		
+		// Make sure the toplevels are focused in their respective order and being refocused when a toplevel disappears
 		if(!inWMScreen) {
-			WLCToplevel focus = bridge.getMostRecentFocus();
-			if(focus != null) {
-				bridge.focusSurface(focus);
-			}
+			WLCToplevel focus = bridge.getMostToLeastRecentFocus()
+					.filter((t) -> hasDisplayFor(t))
+					.findFirst()
+					.orElse(null);
+			
+			bridge.focusSurface(focus);
 		}
 		
 		Camera camera = ctx.camera();
@@ -226,41 +191,24 @@ public class WaylandCraft implements ClientModInitializer {
 		if(playerUsingWindowItem) {
 			ItemStack item = Minecraft.getInstance().player.getUseItem();
 			if(item.is(WindowItem.WINDOW)) {
-				WLCToplevel toplevel = getToplevel(item);
+				WLCToplevel toplevel = WindowItem.getToplevel(item);
 				
 				if(toplevel != null) {
-					WindowDisplay display = getOrCreateDisplay(toplevel);
-					if(!playerWasUsingWindowItem) {
-						display.anchorDistance = 2.0;
-					}
-					
-					display.doGrabMove(camera.position(), new Vec3(camera.forwardVector()), new Vec3(camera.upVector()), camera.yRot());
-					
+					getOrCreateDisplay(toplevel).anchorToCamera(camera);
 					WaylandCraft.instance.bridge.focusSurface(toplevel);
 				}
 			}
 			else playerUsingWindowItem = false;
 		}
-		playerWasUsingWindowItem = playerUsingWindowItem;
 		
 		updateOutputSize(inWMScreen);
 	}
 	
-	public void startUsingWindowItem() {
-		playerUsingWindowItem = true;
-	}
-	
 	public void enableKeyboardCapture(boolean hardCapture) {
 		if(keyboardCaptureMode != KeyboardCaptureMode.NONE) return;
-
+		
 		keyboardCaptureMode = hardCapture ? KeyboardCaptureMode.HARD_CAPTURE : KeyboardCaptureMode.CAPTURE;
 		bridge.activateKeyboard();
-
-		// Auto-focus the most recent toplevel so keyboard input goes there
-		WLCToplevel focus = bridge.getMostRecentFocus();
-		if(focus != null) {
-			bridge.focusSurface(focus);
-		}
 	}
 	
 	public void disableKeyboardCapture() {
@@ -293,41 +241,8 @@ public class WaylandCraft implements ClientModInitializer {
 	}
 	
 	private void onClientJoin(ClientPacketListener listener, PacketSender sender, Minecraft minecraft) {
-		if(bridge == null) return;
-		String platformLabel = org.lwjgl.system.Platform.get() == org.lwjgl.system.Platform.WINDOWS
-				? "WindowMod (Win32 capture)"
-				: "Wayland compositor";
-		minecraft.getChatListener().handleSystemMessage(Component.literal(platformLabel + " running on " + waylandSocket), false);
-		if(x11Display != null) minecraft.getChatListener().handleSystemMessage(Component.literal("xwayland-satellite running on " + x11Display), false);
+		minecraft.getChatListener().handleSystemMessage(Component.literal("Wayland compositor running on " + waylandSocket), false);
 		itemManager.giveItemsIfMissing(bridge.getMappedToplevels());
-	}
-	
-	@Nullable
-	public static WLCToplevel getToplevel(ItemStack item) {
-		if(item == null) return null;
-		if(WaylandCraft.instance.bridge == null) return null;
-
-		WindowHandle data = item.get(WindowItem.WINDOW_HANDLE);
-		if(data == null) return null;
-		if(!data.matchesPlayer(Minecraft.getInstance().player)) return null;
-
-		return WaylandCraft.instance.bridge.getToplevel(data.handle());
-	}
-	
-	private void addWindowItemTooltip(ItemStack itemStack, TooltipContext ctx, TooltipFlag flag, List<Component> list) {
-		WindowHandle handle = itemStack.get(WindowItem.WINDOW_HANDLE);
-		if(handle != null) {
-			String text = "Handle 0x" + Long.toHexString(handle.handle());
-			Component component = Component
-					.literal(text)
-					.withStyle(ChatFormatting.GRAY);
-			list.add(component);
-			String owner = "Owner " + handle.player();
-			component = Component
-					.literal(owner)
-					.withStyle(ChatFormatting.GRAY);
-			list.add(component);
-		}
 	}
 	
 	private void updateDisplayRequests() {
@@ -405,13 +320,13 @@ public class WaylandCraft implements ClientModInitializer {
 		if(dndRequest != null) {
 			ImplicitGrab implicit = pointerGrabs.dropImplicitMatching(dndRequest);
 			if(implicit != null) {
-				WaylandCraftCommon.LOGGER.info("DND STARTED");
+				LOGGER.info("DND STARTED");
 				// The serial matched an active implicit grab
 				pointerGrabs.startExclusive(new DNDGrab(implicit));
 			}
 			else {
 				// Couldn't match implicit grab, have to cancel dnd
-				WaylandCraftCommon.LOGGER.info("drag and drop did not match implicit grab");
+				LOGGER.info("drag and drop did not match implicit grab");
 				bridge.dndCancel();
 			}
 		}
@@ -516,7 +431,7 @@ public class WaylandCraft implements ClientModInitializer {
 			this.overridePickBlock = true;
 			this.cursorShape = bridge.getCursorShape();
 			
-			pointerGrabs.moveWorld(pos, look, up, camera.yRot(), camera.xRot());
+			pointerGrabs.moveWorld(pos, look, up);
 			if(finalHitResult != null) {
 				pointerGrabs.hover(finalHitResult.target.window, finalHitResult.surface, finalHitResult.surfaceLocalRelative.x, finalHitResult.surfaceLocalRelative.y);
 			}
@@ -545,11 +460,6 @@ public class WaylandCraft implements ClientModInitializer {
 			if(keyboardCaptureMode != KeyboardCaptureMode.NONE && bridge.maybeLockPointer(surface)) {
 				pointerCapture = new PointerCapture(surface, rel.x, rel.y);
 			}
-			
-			// Focus on hover
-			if(settings.getFocusOnHover() && hoveredDisplay.target.window instanceof WLCToplevel toplevel) {
-				bridge.focusSurface(toplevel);
-			}
 		}
 		else {
 			bridge.sendMotionOutside();
@@ -560,13 +470,7 @@ public class WaylandCraft implements ClientModInitializer {
 	 * Returns true when the mouse button action has been consumed
 	 */
 	public boolean onButtonPress(long windowHandle, int button, int action, int modifiers) {
-		if(bridge == null) return false;
-		
 		if(pointerCapture != null) {
-
-
-
-
 			if(action == 1 && !pointerCapture.pressedButtons.contains(button)) {
 				bridge.sendButton(0x110 + button, 1);
 				pointerCapture.pressedButtons.add(button);
@@ -589,23 +493,14 @@ public class WaylandCraft implements ClientModInitializer {
 		
 		if(pointerGrabs.isExclusiveGrabActive()) return true;
 		
-		// Handle implicit pointer grab button presses
-		if(action == 1) {
-			// Start new implicit grab when conditions are met
-			if(!pointerGrabs.isImplicitActive() && hoveredDisplay != null && hoveredDisplay.dist >= 0) {
-				pointerGrabs.startImplicit(hoveredDisplay);
+		if(action == 1 && hoveredDisplay != null && !pointerGrabs.isGrabActive(button)) {
+			if(hoveredDisplay.dist >= 0) {
 				WLCAbstractWindow window = hoveredDisplay.target.window;
+				pointerGrabs.startImplicit(hoveredDisplay, button);
+				
 				if(window instanceof WLCToplevel) bridge.focusSurface((WLCToplevel) window);
 			}
-			
-			// If an implicit pointer grab is now active, capture the button press
-			if(pointerGrabs.isImplicitActive()) {
-				pointerGrabs.sendImplicitButton(button);
-				return true;
-			}
-			
-			// If clicking on a window at all, the button press should be captured, even if it wasn't passed on to the application
-			if(hoveredDisplay != null) return true;
+			return true;
 		}
 		
 		return false;
@@ -622,10 +517,15 @@ public class WaylandCraft implements ClientModInitializer {
 	 * Returns true when the mouse move has been consumed
 	 */
 	public boolean onMouseTurn(double dx, double dy) {
-		if(bridge == null) return false;
 		if(pointerCapture == null) return false;
 		
 		bridge.sendRelativeMotion(dx, dy);
+		
+		// Workaround for xwayland-satellite issues, usually shouldn't be done
+		// as it is technically against protocol and so might cause issues but
+		// otherwise relative motion seems to not work.
+//		bridge.sendMotion(pointerCapture.x += dx, pointerCapture.y += dy);
+		
 		return true;
 	}
 	
@@ -633,29 +533,14 @@ public class WaylandCraft implements ClientModInitializer {
 	 * Returns true when the mouse scroll action has been consumed
 	 */
 	public boolean onScroll(long windowHandle, double scrollX, double scrollY) {
-		if(bridge == null) return false;
-		
-		if(playerUsingWindowItem) {
-			WLCToplevel toplevel = getToplevel(Minecraft.getInstance().player.getUseItem());
-			if(toplevel != null) {
-				WindowDisplay display = getDisplay(toplevel);
-				if(display != null) {
-					display.adjustAnchorDistance(scrollY);
-					return true;
-				}
-			}
-		}
-
-		if(pointerGrabs.isExclusiveGrabActive()) {
-			pointerGrabs.onScroll(scrollX, scrollY);
-			return true;
-		}
+		if(pointerGrabs.isExclusiveGrabActive()) return true;
 		
 		if(hoveredDisplay != null) {
 			if(hoveredDisplay.dist < 0) return true;
 			
-			bridge.sendScroll(0, -scrollY);
-			bridge.sendScroll(1, -scrollX);
+			// Multiplication by -10 is the inverse transformation from what GLFW does on wayland
+			bridge.sendScroll(0, -scrollY * 10);
+			bridge.sendScroll(1, -scrollX * 10);
 			
 			WLCAbstractWindow window = hoveredDisplay.target.window;
 			if(window instanceof WLCToplevel) bridge.focusSurface((WLCToplevel) window);
@@ -673,8 +558,6 @@ public class WaylandCraft implements ClientModInitializer {
 	 * For X11 and Wayland hosts, this is a huge hack but should mostly work for now
 	 */
 	public boolean onKeyPress(long windowHandle, int key, int scancode, int action, int modifiers) {
-		if(bridge == null) return false;
-		
 		if(key == GLFW.GLFW_KEY_Q && modifiers == GLFW.GLFW_MOD_ALT) {
 			if(action == 0) return true;
 			
@@ -708,7 +591,6 @@ public class WaylandCraft implements ClientModInitializer {
 		if(GLFW.glfwGetPlatform() == GLFW.GLFW_PLATFORM_WAYLAND) {
 			scancode += 8;
 		}
-		// Windows GLFW scancodes are already suitable for MapVirtualKeyW
 		return scancode;
 	}
 	
@@ -724,7 +606,11 @@ public class WaylandCraft implements ClientModInitializer {
 		}
 		
 		window.rotate(parent.normal(), parent.down());
-		window.moveOrigin(parent.localToWorld(popup.offsetX, popup.offsetY, 0.01));
+		
+		int x = popup.offsetX - popup.geometry.x() + parent.window.geometry.x();
+		int y = popup.offsetY - popup.geometry.y() + parent.window.geometry.y();
+		
+		window.moveOrigin(parent.localToWorld(x, y, 0.01));
 	}
 	
 	public static enum KeyboardCaptureMode {
@@ -752,4 +638,3 @@ public class WaylandCraft implements ClientModInitializer {
 	}
 	
 }
-

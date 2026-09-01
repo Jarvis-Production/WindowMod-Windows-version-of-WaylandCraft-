@@ -1,4 +1,4 @@
-package dev.evvie.waylandcraft.utils;
+package dev.evvie.waylandcraft;
 
 import org.jetbrains.annotations.Nullable;
 

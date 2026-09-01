@@ -1,7 +1,6 @@
 package dev.evvie.waylandcraft.mixin;
 
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
 import com.mojang.blaze3d.opengl.GlTexture;
@@ -15,10 +14,4 @@ public interface IGlTextureMixin {
 		throw new AssertionError();
 	}
 	
-	// Read the underlying OpenGL texture name so we can attach it to our own
-	// framebuffer object and read back its pixels for screen sharing.
-	@Accessor("id")
-	int waylandcraft$getId();
-	
 }
-

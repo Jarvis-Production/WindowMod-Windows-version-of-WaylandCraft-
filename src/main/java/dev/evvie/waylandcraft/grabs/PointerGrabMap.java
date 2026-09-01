@@ -5,10 +5,10 @@ import java.util.ArrayList;
 import org.jetbrains.annotations.Nullable;
 
 import dev.evvie.waylandcraft.WaylandCraft;
+import dev.evvie.waylandcraft.WindowDisplay;
+import dev.evvie.waylandcraft.WindowDisplay.DisplayHitResult;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow;
 import dev.evvie.waylandcraft.bridge.WLCSurface;
-import dev.evvie.waylandcraft.displays.WindowDisplay;
-import dev.evvie.waylandcraft.displays.WindowDisplay.DisplayHitResult;
 import net.minecraft.world.phys.Vec3;
 
 public class PointerGrabMap {
@@ -34,25 +34,14 @@ public class PointerGrabMap {
 	}
 	
 	// Start implicit pointer grab on a surface. Surface MUST have active pointer focus!
-	public void startImplicit(DisplayHitResult hitResult) {
+	public void startImplicit(DisplayHitResult hitResult, int button) {
 		if(isExclusiveGrabActive()) return;
-		if(implicitGrabs != null) return;
 		
-		implicitGrabs = new ImplicitGrabs(hitResult);
-	}
-	
-	// Update the currently active implicit grab with a button press
-	public void sendImplicitButton(int button) {
-		if(isExclusiveGrabActive()) return;
-		if(implicitGrabs == null) return;
+		if(implicitGrabs == null) implicitGrabs = new ImplicitGrabs(hitResult);
 		if(implicitGrabs.contains(button)) return;
 		
 		int serial = wlc.bridge.sendButton(0x110 + button, 1);
 		implicitGrabs.add(button, serial);
-	}
-	
-	public boolean isImplicitActive() {
-		return implicitGrabs != null;
 	}
 	
 	public void startExclusive(PointerGrab grab) {
@@ -69,10 +58,10 @@ public class PointerGrabMap {
 		exclusiveGrab = grab;
 	}
 	
-	public void moveWorld(Vec3 pos, Vec3 view, Vec3 up, float yRot, float xRot) {
+	public void moveWorld(Vec3 pos, Vec3 view, Vec3 up) {
 		if(exclusiveGrab != null) {
 			try {
-				exclusiveGrab.moveWorld(pos, view, up, yRot, xRot);
+				exclusiveGrab.moveWorld(pos, view, up);
 			} catch(GrabDroppedException e) {
 				exclusiveGrab = null;
 			}
@@ -108,21 +97,11 @@ public class PointerGrabMap {
 			}
 		}
 	}
-
-	public void onScroll(double scrollX, double scrollY) {
-		if (exclusiveGrab != null) {
-			try {
-				exclusiveGrab.onScroll(scrollX, scrollY);
-			} catch (GrabDroppedException e) {
-				exclusiveGrab = null;
-			}
-		}
-	}
 	
 	public void release(int button) {
 		if(exclusiveGrab != null && exclusiveGrab.button == button) {
 			try {
-				exclusiveGrab.release(false);
+				exclusiveGrab.release();
 			} catch (GrabDroppedException e) {
 				// No handling necessary, grab always removed
 			}
@@ -143,7 +122,7 @@ public class PointerGrabMap {
 	private void releaseImplicit() {
 		if(implicitGrabs == null) return;
 		
-		for(ButtonPress press : implicitGrabs.buttons) {
+		for(ImplicitGrab press : implicitGrabs.entries) {
 			wlc.bridge.sendButton(0x110 + press.button, 0);
 		}
 		implicitGrabs = null;
@@ -155,13 +134,13 @@ public class PointerGrabMap {
 		if(exclusiveGrab == null) return;
 		
 		try {
-			exclusiveGrab.release(true);
+			exclusiveGrab.release();
 		} catch (GrabDroppedException e) {
 			// No handling necessary, grab always removed
 		}
 		exclusiveGrab = null;
 	}
-
+	
 	/* Drop an active implicit pointer grab that matches the given serial.
 	 * This method is supposed to be used to upgrade implicit grabs to exclusive ones.
 	 * A button release event is not forwarded to the client.
@@ -170,10 +149,10 @@ public class PointerGrabMap {
 		if(isExclusiveGrabActive()) return null;
 		if(implicitGrabs == null) return null;
 		
-		for(ButtonPress press : implicitGrabs.buttons) {
-			if(press.serial == serial) {
-				implicitGrabs.remove(press.button); // Warning: Could set implicitGrabs to null
-				return new ImplicitGrab(implicitGrabs, press);
+		for(ImplicitGrab implicitGrab : implicitGrabs.entries) {
+			if(implicitGrab.serial == serial) {
+				implicitGrabs.remove(implicitGrab.button); // Warning: Could set implicitGrabs to null
+				return implicitGrab;
 			}
 		}
 		return null;
@@ -185,7 +164,7 @@ public class PointerGrabMap {
 		public final WLCSurface surface;
 		public final Vec3 startWorldPos;
 		public final Vec3 startSurfaceLocal;
-		public ArrayList<ButtonPress> buttons = new ArrayList<ButtonPress>();
+		public ArrayList<ImplicitGrab> entries = new ArrayList<ImplicitGrab>();
 		
 		public ImplicitGrabs(DisplayHitResult hitResult) {
 			this.window = hitResult.target;
@@ -195,34 +174,26 @@ public class PointerGrabMap {
 		}
 		
 		public boolean contains(int button) {
-			return buttons.stream().anyMatch((press) -> press.button == button);
+			return entries.stream().anyMatch((press) -> press.button == button);
 		}
 		
 		public boolean isEmpty() {
-			return buttons.isEmpty();
+			return entries.isEmpty();
 		}
 		
 		public void add(int button, int serial) {
 			assert !contains(button);
-			buttons.add(new ButtonPress(button, serial));
+			entries.add(new ImplicitGrab(window, surface, button, serial, startWorldPos, startSurfaceLocal));
 		}
 		
 		public void remove(int button) {
 			assert contains(button);
-			buttons.removeIf((press) -> press.button == button);
+			entries.removeIf((press) -> press.button == button);
 		}
 		
 	}
-	
-	private static record ButtonPress(int button, int serial) {}
 	
 	// Not a real pointer grab, just a way to represent active button presses on a WindowDisplay
-	public static record ImplicitGrab(WindowDisplay window, WLCSurface surface, int button, int serial, Vec3 startWorldPos, Vec3 startSurfaceLocal) {
-		
-		private ImplicitGrab(ImplicitGrabs implicitGrabs, ButtonPress press) {
-			this(implicitGrabs.window, implicitGrabs.surface, press.button, press.serial, implicitGrabs.startWorldPos, implicitGrabs.startSurfaceLocal);
-		}
-		
-	}
+	public static record ImplicitGrab(WindowDisplay window, WLCSurface surface, int button, int serial, Vec3 startWorldPos, Vec3 startSurfaceLocal) {}
 	
 }

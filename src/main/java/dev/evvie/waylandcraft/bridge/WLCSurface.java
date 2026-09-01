@@ -1,8 +1,5 @@
 package dev.evvie.waylandcraft.bridge;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.jetbrains.annotations.Nullable;
 
 import dev.evvie.waylandcraft.WaylandCraft;
@@ -10,7 +7,6 @@ import dev.evvie.waylandcraft.render.BufferTexture;
 import dev.evvie.waylandcraft.render.BufferTexture.DmabufTexture;
 import dev.evvie.waylandcraft.render.BufferTexture.ShmBufferTexture;
 import dev.evvie.waylandcraft.render.BufferTexture.SinglePixelBufferTexture;
-import net.minecraft.util.Mth;
 
 public class WLCSurface {
 	
@@ -19,13 +15,6 @@ public class WLCSurface {
 	
 	// Used by native code to tag used surfaces
 	protected boolean visited;
-	
-	// Set true whenever a new buffer is attached (content changed). The
-	// framebuffer renderer consumes and clears this so it can skip redrawing
-	// windows whose contents have not changed — a big FPS win for static
-	// windows, since render() otherwise rebuilds GPU buffers every frame.
-	public boolean bufferUpdated = false;
-
 	
 	@Nullable
 	private BufferTexture buffer = null;
@@ -57,8 +46,6 @@ public class WLCSurface {
 	public int xSubpos = 0;
 	public int ySubpos = 0;
 	
-	private ArrayList<SurfaceDamage> damage = new ArrayList<>();
-	
 	protected WLCSurface(long handle) {
 		this.handle = handle;
 	}
@@ -79,16 +66,14 @@ public class WLCSurface {
 	
 	// Attach a shared memory buffer
 	// The surface width and height are reset to the given buffer dimensions.
-	protected void attachShmBuffer(long ptr, int width, int height, int format, int stride) {
+	protected void attachShmBuffer(long ptr, int width, int height, int format) {
 		if(this.buffer != null) {
 			this.buffer.release();
 		}
-		this.buffer = new ShmBufferTexture(ptr, width, height, format, stride);
+		this.buffer = new ShmBufferTexture(ptr, width, height, format);
 		this.width = width;
 		this.height = height;
-		this.bufferUpdated = true;
 	}
-
 	
 	// Attach a single pixel buffer
 	// The surface width and height are reset to 1.
@@ -113,9 +98,6 @@ public class WLCSurface {
 		if(this.buffer != null) {
 			this.width = buffer.width;
 			this.height = buffer.height;
-			
-			DmabufTexture dmabuf = (DmabufTexture) this.buffer;
-			dmabuf.copyData();
 		}
 		return this.buffer != null;
 	}
@@ -151,39 +133,6 @@ public class WLCSurface {
 		this.height = height;
 	}
 	
-	protected void clearDamage() {
-		damage.clear();
-	}
-	
-	protected void addSurfaceDamage(int x, int y, int width, int height) {
-		this.damage.add(new SurfaceDamage(x, y, width, height));
-	}
-	
-	protected void addBufferDamage(int x, int y, int width, int height) {
-		if(buffer == null) return;
-		
-		double sx = x;
-		double sy = y;
-		double sw = width;
-		double sh = height;
-		
-		if(sourceView != null) {
-			sx -= sourceView.x;
-			sy -= sourceView.y;
-		}
-		
-		sx *= this.width / buffer.width;
-		sy *= this.height / buffer.height;
-		sw *= this.width / buffer.width;
-		sh *= this.height / buffer.height;
-		
-		addSurfaceDamage(Mth.floor(sx), Mth.floor(sy), Mth.ceil(sw), Mth.ceil(sh));
-	}
-	
-	public List<SurfaceDamage> getDamage() {
-		return damage;
-	}
-	
 	public int width() {
 		return width;
 	}
@@ -217,11 +166,20 @@ public class WLCSurface {
 	}
 	
 	// Surface-local dimensions of the source rectangle in a buffer
-	public static final record ViewportSource(double x, double y, double width, double height) {
-	}
-	
-	// Surface-local region describing contents damage
-	public static final record SurfaceDamage(int x, int y, int width, int height) {
+	public static final class ViewportSource {
+		
+		public final double x;
+		public final double y;
+		public final double width;
+		public final double height;
+		
+		public ViewportSource(double x, double y, double width, double height) {
+			this.x = x;
+			this.y = y;
+			this.width = width;
+			this.height = height;
+		}
+		
 	}
 	
 }

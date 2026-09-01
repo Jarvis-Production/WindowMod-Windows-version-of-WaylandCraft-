@@ -10,8 +10,6 @@ import com.llamalad7.mixinextras.sugar.ref.LocalRef;
 import com.mojang.blaze3d.vertex.PoseStack;
 
 import dev.evvie.waylandcraft.WaylandCraft;
-import dev.evvie.waylandcraft.WaylandCraftCommon;
-import dev.evvie.waylandcraft.bridge.WLCToplevel;
 import dev.evvie.waylandcraft.item.WindowItem;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.ItemInHandRenderer;
@@ -39,11 +37,10 @@ public abstract class ItemInHandRendererMixin {
 		@Local LocalRef<HumanoidArm> humanoidArmRef
 	) {
 		if(!itemStack.is(WindowItem.WINDOW)) return;
-		WLCToplevel toplevel = WaylandCraft.getToplevel(itemStack);
-		if(toplevel == null) return;
-
+		if(WindowItem.getToplevel(itemStack) == null) return;
+		
 		info.cancel();
-
+		
 		WaylandCraft.instance.windowInHandRenderer.render(poseStack, collector, attack, handHeight, light, humanoidArmRef.get(), itemStack);
 	}
 	

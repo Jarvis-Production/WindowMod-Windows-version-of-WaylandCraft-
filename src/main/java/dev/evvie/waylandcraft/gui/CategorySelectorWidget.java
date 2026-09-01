@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import net.minecraft.client.gui.ComponentPath;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.WidgetSprites;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
@@ -68,7 +68,7 @@ public class CategorySelectorWidget extends AbstractWidget {
 	}
 	
 	@Override
-	protected void extractWidgetRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float partialTicks) {
+	protected void renderWidget(GuiGraphics context, int mouseX, int mouseY, float partialTicks) {
 		for(int i = 0; i < entries.size(); i++) {
 			int bx = idxPosX(i);
 			int by = idxPosY(i);

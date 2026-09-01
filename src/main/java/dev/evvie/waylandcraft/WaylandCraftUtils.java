@@ -1,4 +1,4 @@
-package dev.evvie.waylandcraft.utils;
+package dev.evvie.waylandcraft;
 
 import org.joml.Quaternionf;
 import org.joml.Vector3f;

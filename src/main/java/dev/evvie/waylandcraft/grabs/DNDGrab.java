@@ -17,16 +17,12 @@ public class DNDGrab extends PointerGrab {
 	}
 	
 	@Override
-	public void release(boolean force) throws GrabDroppedException {
-		if(!force) {
-			wlc.bridge.dndDrop();
-		} else {
-			wlc.bridge.dndCancel();
-		}
+	public void release() throws GrabDroppedException {
+		wlc.bridge.dndDrop();
 	}
 	
 	@Override
-	public void moveWorld(Vec3 pos, Vec3 view, Vec3 up, float yRot, float xRot) throws GrabDroppedException {
+	public void moveWorld(Vec3 pos, Vec3 view, Vec3 up) throws GrabDroppedException {
 	}
 	
 	@Override

@@ -1,96 +1,106 @@
 package dev.evvie.waylandcraft.item;
 
-import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.stream.StreamSupport;
 
 import dev.evvie.waylandcraft.WaylandCraft;
-import dev.evvie.waylandcraft.WaylandCraftCommon;
 import dev.evvie.waylandcraft.bridge.WLCToplevel;
-import dev.evvie.waylandcraft.desktop.DesktopEntry;
-import dev.evvie.waylandcraft.network.ServerboundAliveWindowsPayload;
-import dev.evvie.waylandcraft.network.ServerboundGiveItemsPayload;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 
-public class WindowItemManager implements WindowItemInteractionProvider, ClientTickEvents.StartTick {
+public class WindowItemManager {
 	
-	private static Component UNKNOWN_WINDOW_TEXT = Component.literal("Unknown Window");
+	private WaylandCraft wlc;
+	private LinkedHashSet<WLCToplevel> giveItems = new LinkedHashSet<WLCToplevel>();
+	private LinkedHashSet<WLCToplevel> giveIfMissingItems = new LinkedHashSet<WLCToplevel>();
 	
-	// Toplevel handles last sent to the server for synchronization
-	private long[] syncedToplevels = new long[0];
+	public WindowItemManager(WaylandCraft wlc) {
+		this.wlc = wlc;
+	}
 	
 	public void giveItem(WLCToplevel toplevel) {
-		ClientPlayNetworking.send(new ServerboundGiveItemsPayload(new long[] {toplevel.getHandle()}, false));
+		giveItems.add(toplevel);
+	}
+	
+	public void giveItemIfMissing(WLCToplevel toplevel) {
+		giveIfMissingItems.add(toplevel);
+	}
+	
+	public void giveItems(WLCToplevel... toplevels) {
+		for(int i = 0; i < toplevels.length; i++) giveItem(toplevels[i]);
 	}
 	
 	public void giveItemsIfMissing(WLCToplevel... toplevels) {
-		if(toplevels.length < 1) return;
-		
-		long[] handles = new long[toplevels.length];
-		for(int i = 0; i < toplevels.length; i++) handles[i] = toplevels[i].getHandle();
-		
-		syncToplevels();
-		ClientPlayNetworking.send(new ServerboundGiveItemsPayload(handles, true));
+		for(int i = 0; i < toplevels.length; i++) giveItemIfMissing(toplevels[i]);
 	}
 	
-	@Override
-	public void onStartTick(Minecraft client) {
-		if(client.level == null) return;
-		if(WaylandCraft.instance.bridge == null) return;
-		
-		// Keep the server's view of which windows are still alive up to date so
-		// it can invalidate items for windows that have closed.
-		syncToplevels();
-		
-		// NOTE: we deliberately do NOT re-request items for ALL current toplevels
-		// here every tick. Doing so re-handed the player an item for EVERY window
-		// that is still alive, which meant a window-item the player intentionally
-		// THREW AWAY (dropped) was immediately recreated on the next tick — the
-		// item "restored itself" and could never be discarded while its app was
-		// open.
-		//
-		// Items for windows that have just appeared are still handed out exactly
-		// once, in WaylandCraft.updateWorld via giveItemsIfMissing(getNewToplevels()).
-		// That covers "newly opened apps appear as an item" without the
-		// auto-restore side effect, so a dropped item now stays dropped.
-	}
-
-
-	
-	public void syncToplevels() {
-		long[] handles = Arrays.stream(WaylandCraft.instance.bridge.getToplevels()).mapToLong((t) -> t.getHandle()).toArray();
-		if(Arrays.equals(handles, syncedToplevels)) return;
-		
-		ClientPlayNetworking.send(new ServerboundAliveWindowsPayload(handles));
-		syncedToplevels = handles;
+	private boolean isToplevelValid(WLCToplevel toplevel) {
+		return toplevel != null && toplevel.isMapped();
 	}
 	
-	public boolean isValid(ItemStack itemStack) {
-		WLCToplevel toplevel = WaylandCraft.getToplevel(itemStack);
-		return toplevel != null;
-	}
-	
-	@Override
-	public Component getName(ItemStack itemStack) {
-		WLCToplevel toplevel = WaylandCraft.getToplevel(itemStack);
-		if(toplevel == null) return UNKNOWN_WINDOW_TEXT;
+	public void onServerTick(ServerLevel level) {
+		if(wlc.bridge == null) return;
+		if(level.players().size() < 1) return;
 		
-		DesktopEntry entry = WaylandCraft.instance.xdgManager.forAppId(toplevel.appID);
-		if(entry == null) return UNKNOWN_WINDOW_TEXT;
+		level.players().forEach(player -> {
+			Inventory inv = player.getInventory();
+			
+			giveItems.forEach(toplevel -> {
+				ItemStack item = WindowItem.createItem(toplevel);
+				player.addItem(item);
+			});
+			
+			giveIfMissingItems.forEach((toplevel) -> {
+				boolean foundToplevel = false;
+				for(int i = 0; i < inv.getContainerSize(); i++) {
+					ItemStack item = inv.getItem(i);
+					
+					if(!item.is(WindowItem.WINDOW)) continue;
+					if(WindowItem.getToplevel(item) == toplevel) {
+						foundToplevel = true;
+						break;
+					}
+				}
+				
+				if(!foundToplevel) {
+					ItemStack item = WindowItem.createItem(toplevel);
+					player.addItem(item);
+				}
+			});
+			
+			for(int i = 0; i < inv.getContainerSize(); i++) {
+				ItemStack item = inv.getItem(i);
+				if(!item.is(WindowItem.WINDOW)) continue;
+				
+				WLCToplevel toplevel = WindowItem.getToplevel(item);
+				if(!isToplevelValid(toplevel)) {
+					inv.setItem(i, ItemStack.EMPTY);
+				}
+			}
+		});
 		
-		String name = entry.name;
-		if(name == null) return UNKNOWN_WINDOW_TEXT;
+		giveItems.clear();
+		giveIfMissingItems.clear();
 		
-		return Component.literal(name);
-	}
-	
-	@Override
-	public void useTick(LivingEntity entity, ItemStack itemStack) {
-		if(entity != Minecraft.getInstance().player) return;
-		WaylandCraft.instance.startUsingWindowItem();
+		StreamSupport.stream(level.getAllEntities().spliterator(), false)
+				.filter((e) -> e instanceof ItemEntity)
+				.map((e) -> (ItemEntity) e)
+				.filter((e) -> e.getItem().is(WindowItem.WINDOW))
+				.filter((e) -> !isToplevelValid(WindowItem.getToplevel(e.getItem())))
+				.filter((e) -> e.getAge() > 10)
+				.forEach((e) -> {
+					for(int i = 0; i < 10; i++) {
+						double dx = ((level.random.nextDouble() * 2) - 1) * 0.15;
+						double dy = level.random.nextDouble() * 0.2;
+						double dz = ((level.random.nextDouble() * 2) - 1) * 0.15;
+						Minecraft.getInstance().level.addParticle(ParticleTypes.FLAME, e.getX(), e.getY(), e.getZ(), dx, dy, dz);
+					}
+					e.discard();
+				});
 	}
 	
 }

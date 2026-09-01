@@ -1,9 +1,9 @@
 package dev.evvie.waylandcraft.grabs;
 
-import dev.evvie.waylandcraft.displays.WindowDisplay;
-import dev.evvie.waylandcraft.displays.WindowDisplay.DisplayHitResult;
+import dev.evvie.waylandcraft.CursorShape;
+import dev.evvie.waylandcraft.WindowDisplay;
+import dev.evvie.waylandcraft.WindowDisplay.DisplayHitResult;
 import dev.evvie.waylandcraft.grabs.PointerGrabMap.ImplicitGrab;
-import dev.evvie.waylandcraft.utils.CursorShape;
 import net.minecraft.world.phys.Vec3;
 
 public class MoveGrab extends PointerGrab {
@@ -22,11 +22,11 @@ public class MoveGrab extends PointerGrab {
 	}
 	
 	@Override
-	public void release(boolean force) throws GrabDroppedException {
+	public void release() throws GrabDroppedException {
 	}
 	
 	@Override
-	public void moveWorld(Vec3 pos, Vec3 view, Vec3 up, float yRot, float xRot) throws GrabDroppedException {
+	public void moveWorld(Vec3 pos, Vec3 view, Vec3 up) throws GrabDroppedException {
 		if(!window.isValid()) this.drop();
 		
 		wlc.cursorShape = CursorShape.ALL_RESIZE;

@@ -6,9 +6,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import dev.evvie.waylandcraft.WaylandCraft;
-import dev.evvie.waylandcraft.WaylandCraftCommon;
 import dev.evvie.waylandcraft.desktop.DesktopEntry;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
@@ -146,40 +145,36 @@ public class AppLauncherScreen extends Screen {
 	}
 	
 	@Override
-	public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float partialTicks) {
-		super.extractRenderState(context, mouseX, mouseY, partialTicks);
-		searchBox.extractRenderState(context, mouseX, mouseY, partialTicks);
+	public void render(GuiGraphics context, int mouseX, int mouseY, float partialTicks) {
+		super.render(context, mouseX, mouseY, partialTicks);
+		searchBox.render(context, mouseX, mouseY, partialTicks);
 		
 		if(searchBox.getY() >= 5 + font.lineHeight + 5) {
-			context.text(font, header, width / 2 - font.width(header) / 2, 5, Color.white.getRGB());
+			context.drawString(font, header, width / 2 - font.width(header) / 2, 5, Color.white.getRGB());
 		}
 	}
 	
 	public void launch(DesktopEntry entry) {
-		boolean launched = wlc.bridge.execApp(entry.appId);
-		WaylandCraftCommon.LOGGER.info("AppLauncherScreen: execApp('{}') returned {}", entry.appId, launched);
-		if(!launched) {
-			WaylandCraftCommon.LOGGER.warn("AppLauncherScreen: Failed to launch '{}' (app not found or exec failed)", entry.appId);
-		}
+		wlc.bridge.execApp(entry.appId);
 		this.onClose();
 	}
 	
 	private void createCategories() {
 		this.categories = new ArrayList<Category>();
-		categories.add(new Category("AudioVideo", Component.literal("Multimedia"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/multimedia"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Audio", Component.literal("Audio"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/music"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Video", Component.literal("Video"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/video"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Development", Component.literal("Development"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/development"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Education", Component.literal("Education"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/education"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("HealthFitness", Component.literal("Health and Fitness"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/healthfitness"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Game", Component.literal("Games"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/game"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Graphics", Component.literal("Graphics"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/graphics"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Network", Component.literal("Network"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/network"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Office", Component.literal("Office"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/office"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Science", Component.literal("Science"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/science"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Settings", Component.literal("Settings"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/settings"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("System", Component.literal("System"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/system"), new ArrayList<DesktopEntry>()));
-		categories.add(new Category("Utility", Component.literal("Utility"), Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "categories/utility"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("AudioVideo", Component.literal("Multimedia"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/multimedia"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Audio", Component.literal("Audio"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/music"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Video", Component.literal("Video"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/video"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Development", Component.literal("Development"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/development"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Education", Component.literal("Education"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/education"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("HealthFitness", Component.literal("Health and Fitness"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/healthfitness"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Game", Component.literal("Games"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/game"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Graphics", Component.literal("Graphics"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/graphics"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Network", Component.literal("Network"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/network"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Office", Component.literal("Office"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/office"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Science", Component.literal("Science"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/science"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Settings", Component.literal("Settings"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/settings"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("System", Component.literal("System"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/system"), new ArrayList<DesktopEntry>()));
+		categories.add(new Category("Utility", Component.literal("Utility"), Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "categories/utility"), new ArrayList<DesktopEntry>()));
 	}
 	
 	private static record RankedDesktopEntry(DesktopEntry entry, int score) {}

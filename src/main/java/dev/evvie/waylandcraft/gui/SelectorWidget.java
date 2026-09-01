@@ -7,7 +7,7 @@ import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.WidgetSprites;
@@ -100,7 +100,7 @@ public abstract class SelectorWidget<T> extends AbstractWidget {
 	}
 	
 	@Override
-	protected void extractWidgetRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float partialTicks) {
+	protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
 		for(int i = 0; i < buttons.size(); i++) {
 			SelectorButton<T> b = buttons.get(i);
 			
@@ -118,7 +118,7 @@ public abstract class SelectorWidget<T> extends AbstractWidget {
 				b.icon = null;
 			}
 			
-			b.extractRenderState(context, mouseX, mouseY, partialTicks);
+			b.render(guiGraphics, mouseX, mouseY, partialTicks);
 		}
 	}
 	
@@ -156,7 +156,7 @@ public abstract class SelectorWidget<T> extends AbstractWidget {
 		);
 		
 		@Override
-		protected void extractContents(GuiGraphicsExtractor context, int i, int j, float f) {
+		protected void renderContents(GuiGraphics context, int i, int j, float f) {
 			int x = getX();
 			int y = getY();
 			int width = getWidth();
@@ -176,7 +176,8 @@ public abstract class SelectorWidget<T> extends AbstractWidget {
 				xoff += iconSize + 2;
 			}
 			
-			context.text(font, getMessage(), xoff, y + height / 2 - font.lineHeight / 2, color.getRGB());
+			context.drawString(font, getMessage(), xoff, y + height / 2 - font.lineHeight / 2, color.getRGB());
+			
 			context.disableScissor();
 		}
 		

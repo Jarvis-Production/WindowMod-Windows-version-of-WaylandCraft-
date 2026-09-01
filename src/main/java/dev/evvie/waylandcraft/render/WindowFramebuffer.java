@@ -1,25 +1,20 @@
 package dev.evvie.waylandcraft.render;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.OptionalInt;
 
-import org.joml.Matrix4fc;
-
 import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.buffers.Std140Builder;
 import com.mojang.blaze3d.buffers.Std140SizeCalculator;
 import com.mojang.blaze3d.pipeline.BlendFunction;
-import com.mojang.blaze3d.pipeline.ColorTargetState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.DestFactor;
 import com.mojang.blaze3d.platform.SourceFactor;
 import com.mojang.blaze3d.shaders.UniformType;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
@@ -28,63 +23,34 @@ import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexFormat;
 
-import dev.evvie.waylandcraft.WaylandCraftCommon;
+import dev.evvie.waylandcraft.WaylandCraft;
 import dev.evvie.waylandcraft.bridge.WLCSurface;
-import dev.evvie.waylandcraft.bridge.WLCSurface.SurfaceDamage;
 import dev.evvie.waylandcraft.bridge.WLCSurface.ViewportSource;
-import dev.evvie.waylandcraft.displays.FramebufferRenderable;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.DynamicUniformStorage;
-import net.minecraft.client.renderer.DynamicUniformStorage.DynamicUniform;
+import net.minecraft.client.renderer.MappableRingBuffer;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.resources.Identifier;
 
-public class WindowFramebuffer implements FramebufferRenderable {
+public class WindowFramebuffer {
 	
 	public static final RenderPipeline WINDOW_PIPELINE = RenderPipelines.register(
 		RenderPipeline.builder()
-		.withLocation(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "pipeline/window"))
-		.withVertexShader(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "window"))
-		.withFragmentShader(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "window"))
+		.withLocation(Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "pipeline/window"))
+		.withVertexShader(Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "window"))
+		.withFragmentShader(Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, "window"))
 		.withVertexFormat(DefaultVertexFormat.POSITION_TEX, VertexFormat.Mode.QUADS)
 		.withSampler("sampler")
 		.withUniform("window_info", UniformType.UNIFORM_BUFFER)
-		.withColorTargetState(new ColorTargetState(new BlendFunction(SourceFactor.ONE, DestFactor.ONE_MINUS_SRC_ALPHA)))
+		.withBlend(new BlendFunction(SourceFactor.ONE, DestFactor.ONE_MINUS_SRC_ALPHA))
 		.withCull(false)
 		.build()
 	);
-	
-	public static final RenderPipeline UNPREMULTIPLY_PIPELINE = RenderPipelines.register(
-		RenderPipeline.builder()
-		.withLocation(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "pipeline/unpremultiply"))
-		.withVertexShader("core/screenquad")
-		.withFragmentShader(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "unpremultiply"))
-		.withVertexFormat(DefaultVertexFormat.EMPTY, VertexFormat.Mode.TRIANGLES)
-		.withColorTargetState(ColorTargetState.DEFAULT)
-		.withSampler("sampler")
-		.build()
-	);
-	
-	public static final RenderPipeline DAMAGE_PIPELINE = RenderPipelines.register(
-		RenderPipeline.builder()
-		.withLocation(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "pipeline/damage"))
-		.withVertexShader(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "window"))
-		.withFragmentShader(Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, "window_damage"))
-		.withVertexFormat(DefaultVertexFormat.POSITION_TEX, VertexFormat.Mode.QUADS)
-		.withUniform("window_info", UniformType.UNIFORM_BUFFER)
-		.withCull(false)
-		.build()
-	);
-	
-	private static DynamicUniformStorage<WindowInfoUniform> uniformStorage = null;
-	private static boolean debugDamage = false;
 	
 	public final WLCSurface surfaceTree;
-	private TextureTarget tempTarget = null;
-	private TextureTarget target = null;
+	private RenderTarget target = null;
 	private FramebufferTexture texture = null;
 	private Identifier location = null;
 	
@@ -93,26 +59,23 @@ public class WindowFramebuffer implements FramebufferRenderable {
 	private int xoff;
 	private int yoff;
 	
-	// True once at least one frame has been rendered into the target. Used to
-	// guarantee an initial render even before any buffer update arrives.
-	private boolean renderedOnce = false;
-
-	
-	public WindowFramebuffer(WLCSurface surfaceTree) {
+	private WindowFramebuffer(WLCSurface surfaceTree) {
 		this.surfaceTree = surfaceTree;
 	}
 	
-	public static void endFrame() {
-		if(uniformStorage != null) uniformStorage.endFrame();
+	public static WindowFramebuffer renderSurfaceTree(WLCSurface surfaceTree) {
+		WindowFramebuffer buf = new WindowFramebuffer(surfaceTree);
+		buf.init();
+		return buf;
 	}
 	
-	private static void ensureUniformStorage() {
-		if(uniformStorage == null) {
-			uniformStorage = new DynamicUniformStorage<WindowInfoUniform>("window framebuffer", WindowInfoUniform.SIZE, 2);
-		}
+	private void init() {
+		updateDimensions();
+		render();
+		registerTexture();
 	}
 	
-	private void updateTarget() {
+	private void updateDimensions() {
 		int minX = 0;
 		int minY = 0;
 		int maxX = 0;
@@ -130,133 +93,56 @@ public class WindowFramebuffer implements FramebufferRenderable {
 			if(sMaxY > maxY) maxY = sMaxY;
 		}
 		
-		int prevWidth = width;
-		int prevHeight = height;
-		
 		this.xoff = -minX;
 		this.yoff = -minY;
 		this.width = maxX - minX;
 		this.height = maxY - minY;
-		
-		if(width <= 0 || height <= 0) {
-			destroy();
-			return;
-		}
-		
-		if(width != prevWidth || height != prevHeight) destroy();
-		
-		if(tempTarget == null) {
-			tempTarget = new TextureTarget(name() + "-temp", width, height, false);
-		}
-		
-		if(target == null) {
-			target = new TextureTarget(name(), width, height, false);
-		}
-		
-		if(texture == null) registerTexture();
 	}
 	
 	private String name() {
 		return "wayland-framebuffer-" + this.hashCode() + "-" + surfaceTree.hashCode();
 	}
 	
-	// True if any surface in the tree has new buffer content that has not yet
-	// been drawn. Static windows return false, letting us skip the expensive
-	// render() entirely.
-	private boolean needsRender() {
-		if(!renderedOnce) return true;
-		for(WLCSurface surface = surfaceTree; surface != null; surface = surface.getNextChild()) {
-			if(surface.bufferUpdated) return true;
-		}
-		return false;
-	}
-	
-	public void render() {
-		updateTarget();
-		if(target == null || tempTarget == null) return;
+	private void render() {
+		if(width == 0 || height == 0) return;
 		
-		// Skip redrawing unchanged windows — render() rebuilds GPU vertex
-		// buffers and runs render passes every call, which is far too costly to
-		// do every frame for a static window.
-		if(!needsRender()) return;
+		target = new TextureTarget(name(), width, height, false);
 		
-		// Consume the dirty flags; the draw below brings the target up to date.
-		for(WLCSurface surface = surfaceTree; surface != null; surface = surface.getNextChild()) {
-			surface.bufferUpdated = false;
-		}
-		renderedOnce = true;
-
 		PoseStack poseStack = new PoseStack();
-
 		poseStack.translate(-1.0, -1.0, 0.0);
 		poseStack.scale(2.0f / width, 2.0f / height, 1.0f);
-
+		
 		ArrayList<CompiledBufferDraw> elements = new ArrayList<>();
 		for(WLCSurface surface = surfaceTree; surface != null; surface = surface.getNextChild()) {
 			BufferDraw draw = bakeSurface(surface, xoff + surface.xSubpos, yoff + surface.ySubpos);
-			if(draw != null) {
-				elements.add(draw.compile());
-			}
+			if(draw != null) elements.add(draw.compile());
 		}
 		
-		ensureUniformStorage();
-		GpuBufferSlice alphaUniforms = uniformStorage.writeUniform(new WindowInfoUniform(poseStack.last().pose(), true));
-		GpuBufferSlice opaqueUniforms = uniformStorage.writeUniform(new WindowInfoUniform(poseStack.last().pose(), false));
-		
-		try {
-			try(RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(() -> "window framebuffer", tempTarget.getColorTextureView(), OptionalInt.of(0x00000000))) {
-				pass.setPipeline(WINDOW_PIPELINE);
-				for(CompiledBufferDraw element : elements) {
-					pass.setUniform("window_info", element.alpha ? alphaUniforms : opaqueUniforms);
-					pass.bindTexture("sampler", element.textureView, RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
-					pass.setVertexBuffer(0, element.vertexBuffer);
-					pass.setIndexBuffer(element.indexBuffer, element.indexType);
-					pass.drawIndexed(0, 0, element.indexCount, 1);
-				}
-			}
+		MappableRingBuffer alphaUniforms = new MappableRingBuffer(() -> "framebuffer uniforms", GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_MAP_WRITE, new Std140SizeCalculator().putMat4f().putFloat().get());
+		alphaUniforms.rotate();
+		try(GpuBuffer.MappedView view = RenderSystem.getDevice().createCommandEncoder().mapBuffer(alphaUniforms.currentBuffer(), false, true)) {
+			Std140Builder.intoBuffer(view.data()).putMat4f(poseStack.last().pose()).putFloat(0.0f);
 		}
-		finally {
+		
+		MappableRingBuffer nonAlphaUniforms = new MappableRingBuffer(() -> "framebuffer uniforms", GpuBuffer.USAGE_UNIFORM | GpuBuffer.USAGE_MAP_WRITE, new Std140SizeCalculator().putMat4f().putFloat().get());
+		nonAlphaUniforms.rotate();
+		try(GpuBuffer.MappedView view = RenderSystem.getDevice().createCommandEncoder().mapBuffer(nonAlphaUniforms.currentBuffer(), false, true)) {
+			Std140Builder.intoBuffer(view.data()).putMat4f(poseStack.last().pose()).putFloat(1.0f);
+		}
+		
+		try(RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(() -> "window framebuffer", target.getColorTextureView(), OptionalInt.of(0x00000000))) {
+			pass.setPipeline(WINDOW_PIPELINE);
 			for(CompiledBufferDraw element : elements) {
-				element.vertexBuffer.close();
+				pass.setUniform("window_info", element.alpha ? alphaUniforms.currentBuffer() : nonAlphaUniforms.currentBuffer());
+				pass.bindTexture("sampler", element.textureView, RenderUtils.WINDOW_SAMPLER.get());
+				pass.setVertexBuffer(0, element.vertexBuffer);
+				pass.setIndexBuffer(element.indexBuffer, element.indexType);
+				pass.drawIndexed(0, 0, element.indexCount, 1);
 			}
 		}
 		
-		try(RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(() -> "window framebuffer unpremultiply", target.getColorTextureView(), OptionalInt.empty())) {
-			pass.setPipeline(UNPREMULTIPLY_PIPELINE);
-			pass.bindTexture("sampler", tempTarget.getColorTextureView(), RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
-			pass.draw(0, 3);
-		}
-		
-		if(debugDamage) drawDebugDamage(opaqueUniforms);
-	}
-	
-	private void drawDebugDamage(GpuBufferSlice opaqueUniforms) {
-		ArrayList<CompiledBufferDraw> damageElements = new ArrayList<>();
-		for(WLCSurface surface = surfaceTree; surface != null; surface = surface.getNextChild()) {
-			int sx = xoff + surface.xSubpos;
-			int sy = yoff + surface.ySubpos;
-			
-			for(SurfaceDamage damage : surface.getDamage()) {
-				damageElements.add(new BufferDraw(null, sx + damage.x(), sy + damage.y(), damage.width(), damage.height(), 0, 0, 0, 0, false).compile());
-			}
-		}
-		
-		try {
-			try(RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(() -> "window framebuffer damage", target.getColorTextureView(), OptionalInt.empty())) {
-				pass.setPipeline(DAMAGE_PIPELINE);
-				pass.setUniform("window_info", opaqueUniforms);
-				for(CompiledBufferDraw element : damageElements) {
-					pass.setVertexBuffer(0, element.vertexBuffer);
-					pass.setIndexBuffer(element.indexBuffer, element.indexType);
-					pass.drawIndexed(0, 0, element.indexCount, 1);
-				}
-			}
-		}
-		finally {
-			for(CompiledBufferDraw element : damageElements) {
-				element.vertexBuffer.close();
-			}
-		}
+		alphaUniforms.close();
+		nonAlphaUniforms.close();
 	}
 	
 	private BufferDraw bakeSurface(WLCSurface surface, float x, float y) {
@@ -273,13 +159,13 @@ public class WindowFramebuffer implements FramebufferRenderable {
 		
 		ViewportSource src = surface.getViewportSource();
 		if(src != null) {
-			crop_x1 = (float) (src.x() / buf.width);
-			crop_y1 = (float) (src.y() / buf.height);
-			crop_x2 = (float) ((src.x() + src.width()) / buf.width);
-			crop_y2 = (float) ((src.y() + src.height()) / buf.height);
+			crop_x1 = (float) (src.x / buf.width);
+			crop_y1 = (float) (src.y / buf.height);
+			crop_x2 = (float) ((src.x + src.width) / buf.width);
+			crop_y2 = (float) ((src.y + src.height) / buf.height);
 		}
 		
-		return new BufferDraw(buf.getTextureView(), x, y, w, h, crop_x1, crop_y1, crop_x2, crop_y2, buf.format != BufferTexture.FORMAT_XRGB8888);
+		return new BufferDraw(buf.textureView, x, y, w, h, crop_x1, crop_y1, crop_x2, crop_y2, buf.format != BufferTexture.FORMAT_XRGB8888);
 	}
 	
 	private static record CompiledBufferDraw(GpuTextureView textureView, GpuBuffer vertexBuffer, GpuBuffer indexBuffer, int indexCount, VertexFormat.IndexType indexType, boolean alpha) {
@@ -311,7 +197,7 @@ public class WindowFramebuffer implements FramebufferRenderable {
 		if(target == null) return;
 		
 		texture = new FramebufferTexture(getTextureView());
-		location = Identifier.fromNamespaceAndPath(WaylandCraftCommon.MOD_ID, name());
+		location = Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, name());
 		
 		Minecraft.getInstance().getTextureManager().register(location, texture);
 	}
@@ -319,34 +205,25 @@ public class WindowFramebuffer implements FramebufferRenderable {
 	private void unregisterTexture() {
 		TextureManager manager = Minecraft.getInstance().getTextureManager();
 		manager.register(location, manager.getTexture(MissingTextureAtlasSprite.getLocation()));
-		texture = null;
-		location = null;
 	}
 	
-	public void destroy() {
+	public void free() {
 		if(target != null) target.destroyBuffers();
-		if(tempTarget != null) tempTarget.destroyBuffers();
 		if(texture != null) unregisterTexture();
-		target = null;
-		tempTarget = null;
 	}
 	
-	@Override
 	public int getWidth() {
 		return width;
 	}
 	
-	@Override
 	public int getHeight() {
 		return height;
 	}
 	
-	@Override
 	public int getXOff() {
 		return xoff;
 	}
 	
-	@Override
 	public int getYOff() {
 		return yoff;
 	}
@@ -355,18 +232,6 @@ public class WindowFramebuffer implements FramebufferRenderable {
 		if(target == null) return null;
 		return target.getColorTextureView();
 	}
-	
-	// OpenGL texture name backing this framebuffer's color target, or -1 if not
-	// yet allocated. Used by the screen sharing capture path to read back pixels.
-	public int getColorTextureGlId() {
-		if(target == null) return -1;
-		GpuTextureView view = target.getColorTextureView();
-		if(view == null) return -1;
-		com.mojang.blaze3d.textures.GpuTexture tex = view.texture();
-		if(!(tex instanceof com.mojang.blaze3d.opengl.GlTexture glTex)) return -1;
-		return ((dev.evvie.waylandcraft.mixin.IGlTextureMixin) (Object) glTex).waylandcraft$getId();
-	}
-
 	
 	public Identifier getTextureLocation() {
 		return location;
@@ -381,22 +246,10 @@ public class WindowFramebuffer implements FramebufferRenderable {
 		public FramebufferTexture(GpuTextureView textureView) {
 			this.textureView = textureView;
 			this.texture = textureView.texture();
-			this.sampler = RenderUtils.WINDOW_SAMPLER.get();
 		}
 		
 		@Override
 		public void close() {
-		}
-		
-	}
-	
-	private static record WindowInfoUniform(Matrix4fc mat, boolean alpha) implements DynamicUniform {
-		
-		public static final int SIZE = new Std140SizeCalculator().putMat4f().putFloat().get();
-		
-		@Override
-		public void write(ByteBuffer byteBuffer) {
-			Std140Builder.intoBuffer(byteBuffer).putMat4f(mat).putFloat(alpha ? 0.0f : 1.0f);
 		}
 		
 	}

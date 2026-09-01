@@ -1,9 +1,9 @@
 package dev.evvie.waylandcraft.grabs;
 
+import dev.evvie.waylandcraft.WindowDisplay;
+import dev.evvie.waylandcraft.WindowDisplay.DisplayHitResult;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow.SurfaceGeometry;
 import dev.evvie.waylandcraft.bridge.WLCToplevel;
-import dev.evvie.waylandcraft.displays.WindowDisplay;
-import dev.evvie.waylandcraft.displays.WindowDisplay.DisplayHitResult;
 import dev.evvie.waylandcraft.grabs.PointerGrabMap.ImplicitGrab;
 import net.minecraft.world.phys.Vec3;
 
@@ -38,11 +38,11 @@ public class ResizeGrab extends PointerGrab {
 	}
 	
 	@Override
-	public void release(boolean force) throws GrabDroppedException {
+	public void release() throws GrabDroppedException {
 	}
 	
 	@Override
-	public void moveWorld(Vec3 pos, Vec3 view, Vec3 up, float yRot, float xRot) throws GrabDroppedException {
+	public void moveWorld(Vec3 pos, Vec3 view, Vec3 up) throws GrabDroppedException {
 		if(!window.isValid()) this.drop();
 		
 		DisplayHitResult hitResult = window.intersect(pos, view);
