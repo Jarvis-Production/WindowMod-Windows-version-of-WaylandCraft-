@@ -141,6 +141,10 @@ public class WLCSurface {
 		return height;
 	}
 	
+	protected void clearDamage() {
+		// No-op for 1.21.11 compat, Rust expects this
+	}
+
 	public ViewportSource getViewportSource() {
 		return sourceView;
 	}
