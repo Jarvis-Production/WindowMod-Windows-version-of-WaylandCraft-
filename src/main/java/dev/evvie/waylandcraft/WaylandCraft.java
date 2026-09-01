@@ -128,15 +128,19 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	 * Called before game render in Minecraft::runTick
 	 */
 	public void update() {
-		if(bridge == null) {
-			bridge = WaylandCraftBridge.start();
-			waylandSocket = bridge.getSocket();
-			xdgManager = new XDGDesktopManager(this);
-			settingsManager = new WaylandCraftSettingsManager(this);
-			
-			LOGGER.info("Server started on " + waylandSocket);
+		try {
+			if(bridge == null) {
+				bridge = WaylandCraftBridge.start();
+				waylandSocket = bridge.getSocket();
+				xdgManager = new XDGDesktopManager(this);
+				settingsManager = new WaylandCraftSettingsManager(this);
+				
+				LOGGER.info("Server started on " + waylandSocket);
+			}
+			bridge.update();
+		} catch(Throwable t) {
+			LOGGER.error("Error in WaylandCraft.update()", t);
 		}
-		bridge.update();
 	}
 	
 	public void renderWorld(WorldRenderContext ctx) {

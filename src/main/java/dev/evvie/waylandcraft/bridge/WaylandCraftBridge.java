@@ -279,8 +279,13 @@ public class WaylandCraftBridge {
 	}
 	
 	public void update() {
-		// Update wayland clients
-		update(this.instance);
+		try {
+			// Update wayland clients
+			update(this.instance);
+		} catch(Throwable t) {
+			WaylandCraft.LOGGER.error("Error in bridge.update() native call", t);
+			return;
+		}
 		
 		// Find all available toplevels and delete ones that no longer exist
 		long[] toplevelHandles = toplevels(instance);
@@ -460,6 +465,10 @@ public class WaylandCraftBridge {
 		return socket(this.instance);
 	}
 	
+	public String getX11Display() {
+		return x11Display(this.instance);
+	}
+	
 	public boolean inputRegionContains(WLCSurface surface, double x, double y) {
 		return checkInputRegion(surface.getHandle(), x, y);
 	}
@@ -622,6 +631,14 @@ public class WaylandCraftBridge {
 		return execApp(instance, appId);
 	}
 	
+	public boolean killToplevel(WLCToplevel toplevel) {
+		return killToplevel(instance, toplevel.getHandle());
+	}
+	
+	public void setPreferredTerminal(String cmd) {
+		setPreferredTerminal(instance, cmd);
+	}
+	
 	public void setKeymapDefault() {
 		setKeymapDefault(instance);
 	}
@@ -662,6 +679,7 @@ public class WaylandCraftBridge {
 	private static native void shutdown(long instance);
 	private static native void update(long instance);
 	private static native String socket(long instance);
+	private static native String x11Display(long instance);
 	private static native void sendFrame(long handle);
 	
 	private static native void updateSurfaceData(long instance, WLCSurface surface);
@@ -769,6 +787,7 @@ public class WaylandCraftBridge {
 	
 	private static native void freeSurface(long instance, long handle);
 	private static native void freeToplevel(long instance, long handle);
+	private static native boolean killToplevel(long instance, long handle);
 	private static native void freePopup(long instance, long handle);
 	
 	private static native RawDesktopEntry loadDesktopEntry(long instance, String path);
@@ -778,6 +797,7 @@ public class WaylandCraftBridge {
 	
 	private static native boolean execApp(long instance, String appId);
 	
+	private static native void setPreferredTerminal(long instance, String cmd);
 	private static native void setKeymapDefault(long instance);
 	private static native String exportKeymap(long instance);
 	private static native boolean setKeymapFromStr(long instance, String keymap);
