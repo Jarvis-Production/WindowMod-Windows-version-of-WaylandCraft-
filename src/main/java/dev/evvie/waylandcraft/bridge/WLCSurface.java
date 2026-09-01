@@ -145,6 +145,14 @@ public class WLCSurface {
 		// No-op for 1.21.11 compat, Rust expects this
 	}
 
+	protected void addBufferDamage(int x, int y, int width, int height) {
+		// No-op stub for Win32 Rust
+	}
+
+	protected void addSurfaceDamage(int x, int y, int width, int height) {
+		// No-op stub
+	}
+
 	public ViewportSource getViewportSource() {
 		return sourceView;
 	}

@@ -241,7 +241,7 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	}
 	
 	private void onClientJoin(ClientPacketListener listener, PacketSender sender, Minecraft minecraft) {
-		minecraft.getChatListener().handleSystemMessage(Component.literal("Wayland compositor running on " + waylandSocket), false);
+		minecraft.getChatListener().handleSystemMessage(Component.literal("WindowMod running on " + waylandSocket), false);
 		itemManager.giveItemsIfMissing(bridge.getMappedToplevels());
 	}
 	
