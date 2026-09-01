@@ -11,18 +11,14 @@
 	"environment": "*",
 	"entrypoints": {
 		"main": [
-			"dev.evvie.waylandcraft.WaylandCraftCommon"
+			"dev.evvie.waylandcraft.WaylandCraft"
 		],
 		"client": [
 			"dev.evvie.waylandcraft.WaylandCraft"
 		]
 	},
 	"mixins": [
-		"waylandcraft.mixins.json",
-		{
-			"config": "waylandcraft.client.mixins.json",
-			"environment": "client"
-		}
+		"waylandcraft.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.16.0",
