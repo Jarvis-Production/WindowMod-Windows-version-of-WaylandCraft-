@@ -317,7 +317,7 @@ public class WaylandCraftBridge {
 		for(long handle : toplevelHandles) {
 			WLCToplevel toplevel = getOrCreateToplevel(handle);
 			WLCSurface root = toplevel.getSurfaceTree();
-			toplevel.lastChild = updateSurfaceTree(root);
+			toplevel.lastChild = updateSurfaceTree(this.instance, root);
 			
 			updateGeometry(toplevel);
 			toplevel.title = toplevelTitle(toplevel.getHandle());
@@ -343,7 +343,7 @@ public class WaylandCraftBridge {
 			popup.offsetY = offset[1];
 			
 			WLCSurface root = popup.getSurfaceTree();
-			popup.lastChild = updateSurfaceTree(root);
+			popup.lastChild = updateSurfaceTree(this.instance, root);
 			updateGeometry(popup);
 		}
 		
@@ -716,7 +716,7 @@ public class WaylandCraftBridge {
 	// Updates the surface tree given by the root surface
 	// This changes the doubly linked list of the WLCSurfaces.
 	// The returned surface is the last (most deeply nested) child
-	private native WLCSurface updateSurfaceTree(WLCSurface root);
+	private native WLCSurface updateSurfaceTree(long instance, WLCSurface root);
 	
 	// Check if point in surface input region
 	private static native boolean checkInputRegion(long surfaceHandle, double x, double y);
