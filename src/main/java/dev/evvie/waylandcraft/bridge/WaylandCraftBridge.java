@@ -14,6 +14,7 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWNativeEGL;
+import org.lwjgl.system.Platform;
 
 import dev.evvie.waylandcraft.CursorShape;
 import dev.evvie.waylandcraft.WaylandCraft;
@@ -42,13 +43,14 @@ public class WaylandCraftBridge {
 	
 	static {
 		boolean loaded = false;
-		InputStream inputStream = WaylandCraftBridge.class.getResourceAsStream("/libwaylandcraft.so");
+		InputStream inputStream = openNativeLibraryFromJar();
 		if(inputStream != null) {
 			try {
 				byte[] data = inputStream.readAllBytes();
 				inputStream.close();
 				
-				File temp = File.createTempFile("waylandcraft-", "-libwaylandcraft.so");
+				String suffix = Platform.get() == Platform.WINDOWS ? ".dll" : ".so";
+				File temp = File.createTempFile("waylandcraft-", "-libwaylandcraft" + suffix);
 				temp.deleteOnExit();
 				
 				FileOutputStream outputStream = new FileOutputStream(temp);
@@ -70,19 +72,81 @@ public class WaylandCraftBridge {
 		}
 	}
 	
+	private static InputStream loadResource(String path) {
+		WaylandCraft.LOGGER.info("Looking for '" + path + "'...");
+		return WaylandCraftBridge.class.getResourceAsStream(path);
+	}
+	
+	private static InputStream openNativeLibraryFromJar() {
+		InputStream stream = null;
+		
+		if(Platform.get() == Platform.WINDOWS) {
+			stream = loadResource("/waylandcraft.dll");
+			if(stream != null) return stream;
+			stream = loadResource("/libwaylandcraft.dll");
+			if(stream != null) return stream;
+		}
+		else {
+			stream = loadResource("/libwaylandcraft.so");
+			if(stream != null) return stream;
+		}
+		
+		String arch;
+		switch(Platform.getArchitecture()) {
+		case X64: arch = "x86_64"; break;
+		case ARM64: arch = "arm64"; break;
+		default: arch = null; break;
+		}
+		
+		if(arch != null) {
+			if(Platform.get() == Platform.WINDOWS) {
+				stream = loadResource("/libwaylandcraft-windows-gnu-" + arch + ".dll");
+				if(stream != null) return stream;
+			}
+			else {
+				String platform = "linux-gnu-" + arch;
+				stream = loadResource("/libwaylandcraft-" + platform + ".so");
+				if(stream != null) return stream;
+			}
+		}
+		
+		return null;
+	}
+	
 	private WaylandCraftBridge(long handle) {
 		this.instance = handle;
 	}
 	
 	public static WaylandCraftBridge start() {
-		long eglDisplay = GLFWNativeEGL.glfwGetEGLDisplay();
-		long eglConfig = GLFWNativeEGL.glfwGetEGLConfig(Minecraft.getInstance().getWindow().handle());
-		
-		if(eglDisplay == 0 || eglConfig == 0) {
-			throw new RuntimeException("Failed to get EGL display or config!");
+		long eglDisplay = 0;
+		long glfwGetProcAddress = 0;
+
+		if(Platform.get() == Platform.LINUX) {
+			eglDisplay = GLFWNativeEGL.glfwGetEGLDisplay();
+			long eglConfig = GLFWNativeEGL.glfwGetEGLConfig(Minecraft.getInstance().getWindow().handle());
+			
+			if(eglDisplay == 0 || eglConfig == 0) {
+				throw new RuntimeException("Failed to get EGL display or config!");
+			}
+			glfwGetProcAddress = GLFW.Functions.GetProcAddress;
 		}
-		
-		long handle = init(GLFW.Functions.GetProcAddress, eglDisplay);
+
+		long handle = init(glfwGetProcAddress, eglDisplay);
+
+		if(Platform.get() == Platform.WINDOWS) {
+			long glfwWindow = GLFW.glfwGetCurrentContext();
+			try {
+				long win32Hwnd = org.lwjgl.glfw.GLFWNativeWin32.glfwGetWin32Window(glfwWindow);
+				setWin32Hwnd(handle, win32Hwnd);
+			} catch (Exception e) {
+				WaylandCraft.LOGGER.warn("Failed to get Win32 HWND", e);
+			}
+		}
+
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			shutdown(handle);
+		}));
+
 		return new WaylandCraftBridge(handle);
 	}
 	
@@ -594,6 +658,8 @@ public class WaylandCraftBridge {
 	public static record ResizeRequest(int serial, int edges) {}
 	
 	private static native long init(long glfwGetProcAddress, long eglDisplay);
+	private static native void setWin32Hwnd(long instance, long hwnd);
+	private static native void shutdown(long instance);
 	private static native void update(long instance);
 	private static native String socket(long instance);
 	private static native void sendFrame(long handle);
