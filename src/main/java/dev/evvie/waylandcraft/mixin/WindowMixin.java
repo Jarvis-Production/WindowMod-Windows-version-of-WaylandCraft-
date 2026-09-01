@@ -1,6 +1,7 @@
 package dev.evvie.waylandcraft.mixin;
 
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.system.Platform;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.Constant;
 import org.spongepowered.asm.mixin.injection.ModifyConstant;
@@ -12,7 +13,10 @@ public class WindowMixin {
 	
 	@ModifyConstant(method = "<init>", constant = @Constant(intValue = GLFW.GLFW_NATIVE_CONTEXT_API))
 	public int changeContextApi(int originalVal) {
-		return GLFW.GLFW_EGL_CONTEXT_API;
+		if (Platform.get() == Platform.LINUX) {
+			return GLFW.GLFW_EGL_CONTEXT_API;
+		}
+		return originalVal;
 	}
 	
 }
