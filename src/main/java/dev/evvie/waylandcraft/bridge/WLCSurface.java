@@ -1,5 +1,8 @@
 package dev.evvie.waylandcraft.bridge;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.jetbrains.annotations.Nullable;
 
 import dev.evvie.waylandcraft.WaylandCraft;
@@ -7,6 +10,7 @@ import dev.evvie.waylandcraft.render.BufferTexture;
 import dev.evvie.waylandcraft.render.BufferTexture.DmabufTexture;
 import dev.evvie.waylandcraft.render.BufferTexture.ShmBufferTexture;
 import dev.evvie.waylandcraft.render.BufferTexture.SinglePixelBufferTexture;
+import net.minecraft.util.Mth;
 
 public class WLCSurface {
 	
@@ -15,6 +19,8 @@ public class WLCSurface {
 	
 	// Used by native code to tag used surfaces
 	protected boolean visited;
+	
+	public boolean bufferUpdated = false;
 	
 	@Nullable
 	private BufferTexture buffer = null;
@@ -46,6 +52,8 @@ public class WLCSurface {
 	public int xSubpos = 0;
 	public int ySubpos = 0;
 	
+	private ArrayList<SurfaceDamage> damage = new ArrayList<>();
+	
 	protected WLCSurface(long handle) {
 		this.handle = handle;
 	}
@@ -73,6 +81,7 @@ public class WLCSurface {
 		this.buffer = new ShmBufferTexture(ptr, width, height, format, stride);
 		this.width = width;
 		this.height = height;
+		this.bufferUpdated = true;
 	}
 	
 	// Attach a single pixel buffer
@@ -133,6 +142,39 @@ public class WLCSurface {
 		this.height = height;
 	}
 	
+	protected void clearDamage() {
+		damage.clear();
+	}
+	
+	protected void addSurfaceDamage(int x, int y, int width, int height) {
+		this.damage.add(new SurfaceDamage(x, y, width, height));
+	}
+	
+	protected void addBufferDamage(int x, int y, int width, int height) {
+		if(buffer == null) return;
+		
+		double sx = x;
+		double sy = y;
+		double sw = width;
+		double sh = height;
+		
+		if(sourceView != null) {
+			sx -= sourceView.x;
+			sy -= sourceView.y;
+		}
+		
+		sx *= this.width / buffer.width;
+		sy *= this.height / buffer.height;
+		sw *= this.width / buffer.width;
+		sh *= this.height / buffer.height;
+		
+		addSurfaceDamage(Mth.floor(sx), Mth.floor(sy), Mth.ceil(sw), Mth.ceil(sh));
+	}
+	
+	public List<SurfaceDamage> getDamage() {
+		return damage;
+	}
+	
 	public int width() {
 		return width;
 	}
@@ -141,18 +183,6 @@ public class WLCSurface {
 		return height;
 	}
 	
-	protected void clearDamage() {
-		// No-op for 1.21.11 compat, Rust expects this
-	}
-
-	protected void addBufferDamage(int x, int y, int width, int height) {
-		// No-op stub for Win32 Rust
-	}
-
-	protected void addSurfaceDamage(int x, int y, int width, int height) {
-		// No-op stub
-	}
-
 	public ViewportSource getViewportSource() {
 		return sourceView;
 	}
@@ -177,21 +207,20 @@ public class WLCSurface {
 		return this.prevChild;
 	}
 	
-	// Surface-local dimensions of the source rectangle in a buffer
 	public static final class ViewportSource {
-		
 		public final double x;
 		public final double y;
 		public final double width;
 		public final double height;
-		
 		public ViewportSource(double x, double y, double width, double height) {
 			this.x = x;
 			this.y = y;
 			this.width = width;
 			this.height = height;
 		}
-		
+	}
+	
+	public static final record SurfaceDamage(int x, int y, int width, int height) {
 	}
 	
 }

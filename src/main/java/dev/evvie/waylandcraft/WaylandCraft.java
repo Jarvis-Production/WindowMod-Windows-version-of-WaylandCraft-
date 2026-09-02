@@ -474,6 +474,8 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	 * Returns true when the mouse button action has been consumed
 	 */
 	public boolean onButtonPress(long windowHandle, int button, int action, int modifiers) {
+		if(bridge == null) return false;
+		
 		if(pointerCapture != null) {
 			if(action == 1 && !pointerCapture.pressedButtons.contains(button)) {
 				bridge.sendButton(0x110 + button, 1);
@@ -484,7 +486,6 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 				pointerCapture.pressedButtons.remove(button);
 			}
 			else if(action == 0) {
-				// Forward release to minecraft if it wasn't part of this pointer capture
 				return false;
 			}
 			return true;
@@ -521,15 +522,10 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	 * Returns true when the mouse move has been consumed
 	 */
 	public boolean onMouseTurn(double dx, double dy) {
+		if(bridge == null) return false;
 		if(pointerCapture == null) return false;
 		
 		bridge.sendRelativeMotion(dx, dy);
-		
-		// Workaround for xwayland-satellite issues, usually shouldn't be done
-		// as it is technically against protocol and so might cause issues but
-		// otherwise relative motion seems to not work.
-//		bridge.sendMotion(pointerCapture.x += dx, pointerCapture.y += dy);
-		
 		return true;
 	}
 	
@@ -537,6 +533,8 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	 * Returns true when the mouse scroll action has been consumed
 	 */
 	public boolean onScroll(long windowHandle, double scrollX, double scrollY) {
+		if(bridge == null) return false;
+		
 		if(pointerGrabs.isExclusiveGrabActive()) return true;
 		
 		if(hoveredDisplay != null) {
@@ -562,6 +560,8 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	 * For X11 and Wayland hosts, this is a huge hack but should mostly work for now
 	 */
 	public boolean onKeyPress(long windowHandle, int key, int scancode, int action, int modifiers) {
+		if(bridge == null) return false;
+		
 		if(key == GLFW.GLFW_KEY_Q && modifiers == GLFW.GLFW_MOD_ALT) {
 			if(action == 0) return true;
 			
