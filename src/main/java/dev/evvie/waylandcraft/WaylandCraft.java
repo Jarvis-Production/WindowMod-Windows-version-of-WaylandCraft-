@@ -145,11 +145,23 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	
 	public void renderWorld(WorldRenderContext ctx) {
 		if(bridge == null) return;
-		
-		displays.forEach((d) -> d.render(ctx));
+		try {
+			displays.forEach((d) -> d.render(ctx));
+		} catch(Throwable t) {
+			LOGGER.error("Error in renderWorld", t);
+		}
 	}
 	
 	public void updateWorld(WorldExtractionContext ctx) {
+		if(bridge == null) return;
+		try {
+			updateWorld0(ctx);
+		} catch(Throwable t) {
+			LOGGER.error("Error in updateWorld", t);
+		}
+	}
+	
+	private void updateWorld0(WorldExtractionContext ctx) {
 		for(WLCPopup popup : bridge.getMappedPopups()) {
 			WLCAbstractWindow root = popup;
 			while((root = ((WLCPopup) root).getParent()) instanceof WLCPopup);

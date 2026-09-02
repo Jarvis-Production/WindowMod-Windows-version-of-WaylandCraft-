@@ -155,7 +155,13 @@ public class AppLauncherScreen extends Screen {
 	}
 	
 	public void launch(DesktopEntry entry) {
-		wlc.bridge.execApp(entry.appId);
+		WaylandCraft.LOGGER.info("Launching app: {} (appId={})", entry.name, entry.appId);
+		try {
+			boolean result = wlc.bridge.execApp(entry.appId);
+			WaylandCraft.LOGGER.info("execApp returned: {}", result);
+		} catch(Throwable t) {
+			WaylandCraft.LOGGER.error("Error launching app: {}", entry.name, t);
+		}
 		this.onClose();
 	}
 	
