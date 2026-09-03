@@ -354,6 +354,7 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
     // (a GPU compositor layer that ignores synthesized input). Redirect mouse
     // messages to the real `Chrome_RenderWidgetHostHWND`, which consumes them.
     // This is what makes clicking inside Opera/Chrome web content work.
+    let mut chromium_redirect = false;
     if class_name(target) == "Intermediate D3D Window" {
         if let Some((widget, wx, wy)) =
             chromium_input_target(top, state.pointer_x as i32, state.pointer_y as i32)
@@ -361,6 +362,7 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
             target = widget;
             lx = wx;
             ly = wy;
+            chromium_redirect = true;
         }
     }
     let lparam = pack_coords_i(lx, ly);
@@ -496,6 +498,7 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         && button == 0x110
         && !is_classic_list
         && !is_text_edit
+        && !chromium_redirect
     {
         // Choose the window whose automation tree we resolve against, and the
         // child we compute screen coordinates from.
