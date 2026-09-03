@@ -490,13 +490,15 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         if !is_chromium || !pressed {
             let _ = PostMessageW(target, msg, wparam, lparam);
         } else if is_chromium && pressed {
-            // For Chromium on press: send PostMessage to the TOP-LEVEL window
-            // instead of the render widget. The browser chrome (tab bar,
-            // address bar, back/forward buttons) lives in the top-level
-            // Chrome_WidgetWin_1, NOT inside Chrome_RenderWidgetHostHWND.
-            // PostMessage to the render widget only reaches web content
-            // (which UIA handles anyway). Sending to top reaches the tabs.
-            let _ = PostMessageW(top, msg, wparam, lparam);
+            // For Chromium on press on HIDDEN desktop: send PostMessage to the
+            // TOP-LEVEL window to reach browser chrome (tab bar, address bar).
+            // The render widget only handles web content (UIA handles that).
+            // On VISIBLE desktop, skip — PostMessage to top would steal
+            // Minecraft's foreground and fire phantom ESC.
+            let hidden = super::process::is_on_hidden_desktop(top);
+            if hidden {
+                let _ = PostMessageW(top, msg, wparam, lparam);
+            }
         }
     }
 
