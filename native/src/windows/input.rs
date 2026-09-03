@@ -457,13 +457,12 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         || top_cls_now == "Chrome_WidgetWin_0"
         || top_cls_now == "SDL_app";
 
-    // Detect Chromium/Electron apps. For these, PostMessage to the render
-    // widget (Chrome_RenderWidgetHostHWND) actually works — the old comment
-    // about "ignoring PostMessage" applied to Intermediate D3D Window, NOT
-    // to the render widget itself. Since PostMessage works AND UIA Invoke
-    // also works, running both causes DOUBLE-ACTIVATION (e.g. a mute button
-    // in Discord toggles twice → appears as "self-release").
-    // Fix: skip UIA entirely for Chromium apps; PostMessage alone is enough.
+    // Detect Chromium/Electron apps. For these, PostMessage WM_LBUTTONDOWN
+    // on the render widget can sometimes trigger a click in addition to UIA
+    // Invoke, causing DOUBLE-ACTIVATION (e.g. a mute button in Discord
+    // toggles twice → appears as "self-release").
+    // Fix: for Chromium apps, skip PostMessage mouse click and rely on UIA
+    // Invoke only. PostMessage is still sent for mouse-move and keyboard.
     let is_chromium = top_cls_now == "Chrome_WidgetWin_1"
         || top_cls_now == "Chrome_WidgetWin_0"
         || target_cls == "Chrome_RenderWidgetHostHWND";
@@ -476,16 +475,21 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
     // click. Diagnostics for input resolution live in the UIA layer only.
 
     // PostMessage path FIRST (dependable for classic controls; harmless for
-
     // modern apps that ignore it). We activate the window without touching the
     // GLOBAL foreground so Minecraft never thinks it lost focus (which would
     // make it fire ESC).
+    //
+    // For Chromium apps, skip PostMessage for mouse clicks: PostMessage on
+    // Chrome_RenderWidgetHostHWND can sometimes trigger a click in addition
+    // to UIA Invoke, causing double-activation. Keep mouse-move for hover.
     unsafe {
         if pressed {
             activate_target(top, target);
         }
         let _ = PostMessageW(target, WM_MOUSEMOVE, move_wparam, lparam);
-        let _ = PostMessageW(target, msg, wparam, lparam);
+        if !is_chromium || !pressed {
+            let _ = PostMessageW(target, msg, wparam, lparam);
+        }
     }
 
     // UI Automation Invoke path on button-DOWN — for everything except classic
@@ -505,7 +509,6 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         && button == 0x110
         && !is_classic_list
         && !is_text_edit
-        && !is_chromium
     {
         // Choose the window whose automation tree we resolve against, and the
         // child we compute screen coordinates from.
