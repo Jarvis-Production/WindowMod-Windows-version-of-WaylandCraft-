@@ -171,6 +171,21 @@ public class WLCSurface {
 		addSurfaceDamage(Mth.floor(sx), Mth.floor(sy), Mth.ceil(sw), Mth.ceil(sh));
 	}
 	
+	public boolean hasUpdatedBuffer() {
+		if(bufferUpdated) return true;
+		for(WLCSurface child = nextChild; child != null; child = child.nextChild) {
+			if(child.hasUpdatedBuffer()) return true;
+		}
+		return false;
+	}
+	
+	public void clearBufferUpdated() {
+		bufferUpdated = false;
+		for(WLCSurface child = nextChild; child != null; child = child.nextChild) {
+			child.clearBufferUpdated();
+		}
+	}
+	
 	public List<SurfaceDamage> getDamage() {
 		return damage;
 	}

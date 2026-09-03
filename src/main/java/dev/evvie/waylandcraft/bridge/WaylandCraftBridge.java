@@ -394,8 +394,12 @@ public class WaylandCraftBridge {
 		}
 		
 		for(WLCAbstractWindow window : allWindows) {
-			if(window.framebuffer != null) window.framebuffer.free();
-			window.framebuffer = WindowFramebuffer.renderSurfaceTree(window.getSurfaceTree());
+			WLCSurface root = window.getSurfaceTree();
+			if(root != null && root.hasUpdatedBuffer()) {
+				if(window.framebuffer != null) window.framebuffer.free();
+				window.framebuffer = WindowFramebuffer.renderSurfaceTree(root);
+				root.clearBufferUpdated();
+			}
 		}
 		
 		if(dndIcon != null) {
@@ -578,6 +582,18 @@ public class WaylandCraftBridge {
 	
 	public boolean killToplevel(WLCToplevel toplevel) {
 		return killToplevel(instance, toplevel.getHandle());
+	}
+	
+	public void killAllApps() {
+		for(WLCToplevel toplevel : new ArrayList<>(toplevels)) {
+			try {
+				killToplevel(toplevel);
+			} catch(Throwable t) {
+				WaylandCraft.LOGGER.error("Error killing toplevel", t);
+			}
+		}
+		shutdown(instance);
+		instance = 0;
 	}
 	
 	public Integer checkMoveRequest() {

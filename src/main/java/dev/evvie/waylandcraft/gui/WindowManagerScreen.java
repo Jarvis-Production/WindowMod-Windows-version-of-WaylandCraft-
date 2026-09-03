@@ -45,6 +45,7 @@ public class WindowManagerScreen extends Screen {
 	private Button hideButton;
 	private Button pinButton;
 	private Button itemButton;
+	private Button killButton;
 	
 	private boolean resizeMode = false;
 	private WLCToplevel resizeToplevel = null;
@@ -145,11 +146,20 @@ public class WindowManagerScreen extends Screen {
 		itemButton.setTooltipDelay(Duration.ofMillis(700));
 		buttons.add(itemButton);
 		
+		killButton = Button.builder(Component.literal("Kill All"), this::onKillPressed)
+				.pos(3, topMargin + 90)
+				.size(40, 20)
+				.build();
+		killButton.setTooltip(Tooltip.create(Component.literal("Kill all apps & exit")));
+		killButton.setTooltipDelay(Duration.ofMillis(700));
+		buttons.add(killButton);
+		
 		addRenderableWidget(grabButton);
 		addRenderableWidget(resizeButton);
 		addRenderableWidget(hideButton);
 		addRenderableWidget(pinButton);
 		addRenderableWidget(itemButton);
+		addRenderableWidget(killButton);
 		
 		wlc.bridge.activateKeyboard();
 	}
@@ -190,6 +200,18 @@ public class WindowManagerScreen extends Screen {
 	private void onItemPressed(Button button) {
 		if(focused == null) return;
 		wlc.itemManager.giveItem(focused);
+	}
+	
+	private void onKillPressed(Button button) {
+		try {
+			if(wlc.bridge != null) {
+				wlc.bridge.killAllApps();
+			}
+		} catch(Throwable t) {
+			WaylandCraft.LOGGER.error("Error killing apps", t);
+		}
+		this.onClose();
+		Minecraft.getInstance().stop();
 	}
 	
 	private void exitResizeMode() {

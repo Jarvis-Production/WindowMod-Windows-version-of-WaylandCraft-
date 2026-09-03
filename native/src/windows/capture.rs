@@ -251,7 +251,13 @@ fn capture_one_window(hwnd_isize: isize) {
             // means the window content did not change.
             match cap.grab(&mut scratch) {
                 Some((w, h)) => Some((w, h)),
-                None => None,
+                None => {
+                    // On hidden desktops DWM may not composite the window
+                    // until it is explicitly told to repaint. Nudge it so
+                    // WGC gets a real frame instead of staying black.
+                    maybe_request_repaint(hwnd_isize);
+                    None
+                }
             }
         } else {
             // FALLBACK PrintWindow path (non-GPU windows, or WGC unavailable).

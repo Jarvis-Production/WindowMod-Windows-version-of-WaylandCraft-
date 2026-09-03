@@ -67,7 +67,7 @@ public abstract class BufferTexture {
 			GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MIN_FILTER, GL33.GL_LINEAR);
 			GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MAG_FILTER, GL33.GL_NEAREST);
 			
-			GlStateManager._pixelStore(GL33.GL_UNPACK_ROW_LENGTH, stride);
+			GlStateManager._pixelStore(GL33.GL_UNPACK_ROW_LENGTH, stride / 4);
 			GlStateManager._pixelStore(GL33.GL_UNPACK_SKIP_PIXELS, 0);
 			GlStateManager._pixelStore(GL33.GL_UNPACK_SKIP_ROWS, 0);
 			GlStateManager._pixelStore(GL33.GL_UNPACK_ALIGNMENT, 4);

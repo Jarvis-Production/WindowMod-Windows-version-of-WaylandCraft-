@@ -807,7 +807,7 @@ fn update_surface_data<'local>(
     let width = toplevel.width;
     let height = toplevel.height;
     let stride = width * 4;
-    let ptr = toplevel.buffer.as_ptr() as jlong;
+    let ptr = toplevel.buffer.as_ref().as_ptr() as jlong;
 
     jsurface
 
