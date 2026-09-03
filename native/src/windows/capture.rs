@@ -632,7 +632,6 @@ impl GdiCapture {
 
             // (Re)create the bitmap only when the window size changed.
             if self.bitmap.is_none() || self.bw != width || self.bh != height {
-                // Restore the previous object and free the old bitmap first.
                 if let Some(old_bmp) = self.bitmap.take() {
                     SelectObject(mem_dc, self.old_obj);
                     let _ = DeleteObject(HGDIOBJ(old_bmp.0));
@@ -649,71 +648,94 @@ impl GdiCapture {
             }
             let hbm = self.bitmap.unwrap();
 
-            // Force synchronous repaint so apps on hidden desktops paint
-            // before we capture. RDW_UPDATENOW blocks until WM_PAINT is
-            // processed — avoids stale black frames from apps that stopped
-            // repainting when hidden.
-            use windows::Win32::Graphics::Gdi::{RedrawWindow, RDW_ALLCHILDREN, RDW_INVALIDATE, RDW_UPDATENOW};
-            let _ = RedrawWindow(hwnd, None, None, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+            use windows::Win32::Graphics::Gdi::{
+                RedrawWindow, BitBlt, SRCCOPY,
+                RDW_ALLCHILDREN, RDW_FRAME, RDW_INVALIDATE, RDW_UPDATENOW,
+            };
 
-            // Capture the CLIENT area only (see PW_CLIENTONLY note below). Without
-            // it, PrintWindow renders the whole window frame and shifts client
-            // content down, misaligning clicks. PW_RENDERFULLCONTENT keeps
-            // DirectComposition/Chromium surfaces rendering their content.
-            let printed =
-                PrintWindow(hwnd, mem_dc, PW_CLIENTONLY | PW_RENDERFULLCONTENT).as_bool();
+            // ── PASS 0: Force synchronous repaint ──
+            // RDW_UPDATENOW blocks until WM_PAINT is processed, so the app
+            // actually paints before we grab pixels. Without this, hidden-
+            // desktop apps often return stale or black frames.
+            let _ = RedrawWindow(
+                hwnd, None, None,
+                RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW | RDW_ALLCHILDREN,
+            );
 
-            if printed {
-                if read_bitmap_bgra(mem_dc, hbm, width, height, out) {
-                    // Check if the frame is all-black (Electron/D3D apps on
-                    // hidden desktop return success but black pixels).
-                    if !is_all_black(out, width, height) {
-                        let _ = ReleaseDC(hwnd, hdc_window);
-                        return true;
-                    }
-                    // All-black from PrintWindow — try BitBlt as fallback.
-                    // BitBlt captures GDI content directly from the window DC
-                    // which can sometimes succeed where PrintWindow fails.
-                    let hdc_src = GetDC(hwnd);
-                    if !hdc_src.is_invalid() {
-                        let _ = windows::Win32::Graphics::Gdi::BitBlt(
-                            mem_dc, 0, 0, width, height,
-                            hdc_src, 0, 0,
-                            windows::Win32::Graphics::Gdi::SRCCOPY,
-                        );
-                        let _ = ReleaseDC(hwnd, hdc_src);
-                        if read_bitmap_bgra(mem_dc, hbm, width, height, out) {
-                            if !is_all_black(out, width, height) {
-                                let _ = ReleaseDC(hwnd, hdc_window);
-                                return true;
-                            }
-                        }
-                    }
-                    // Both failed — return the black PrintWindow frame as-is.
-                    let _ = ReleaseDC(hwnd, hdc_window);
-                    true
-                } else {
-                    let _ = ReleaseDC(hwnd, hdc_window);
-                    false
-                }
-            } else {
-                // PrintWindow itself failed — try BitBlt as last resort.
+            // Small sleep to let GPU/compositor finish any pending work
+            // (e.g. Chromium's software compositor). 10 ms is enough for
+            // one frame at 60 Hz.
+            std::thread::sleep(Duration::from_millis(10));
+
+            // ── PASS 1: PrintWindow with PW_RENDERFULLCONTENT ──
+            // This is the best capture mode for DirectComposition/GPU
+            // windows. It asks the window to render its full composed
+            // surface into the provided DC.
+            let printed_full = PrintWindow(
+                hwnd, mem_dc,
+                PW_CLIENTONLY | PW_RENDERFULLCONTENT,
+            ).as_bool();
+
+            if printed_full && read_bitmap_bgra(mem_dc, hbm, width, height, out) && !is_all_black(out, width, height) {
+                let _ = ReleaseDC(hwnd, hdc_window);
+                return true;
+            }
+
+            // ── PASS 2: PrintWindow WITHOUT PW_RENDERFULLCONTENT ──
+            // Some apps respond better to plain PrintWindow (just
+            // WM_PRINT). Especially older GDI apps and some UWP apps.
+            let _ = RedrawWindow(
+                hwnd, None, None,
+                RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW | RDW_ALLCHILDREN,
+            );
+            let printed_plain = PrintWindow(hwnd, mem_dc, PW_CLIENTONLY).as_bool();
+
+            if printed_plain && read_bitmap_bgra(mem_dc, hbm, width, height, out) && !is_all_black(out, width, height) {
+                let _ = ReleaseDC(hwnd, hdc_window);
+                return true;
+            }
+
+            // ── PASS 3: BitBlt from window DC ──
+            // BitBlt captures whatever the window drew into its own DC.
+            // This works for GDI apps and some D3D apps that render
+            // into the window DC rather than a swap chain.
+            {
                 let hdc_src = GetDC(hwnd);
                 if !hdc_src.is_invalid() {
-                    let _ = windows::Win32::Graphics::Gdi::BitBlt(
-                        mem_dc, 0, 0, width, height,
-                        hdc_src, 0, 0,
-                        windows::Win32::Graphics::Gdi::SRCCOPY,
-                    );
+                    let _ = BitBlt(mem_dc, 0, 0, width, height, hdc_src, 0, 0, SRCCOPY);
                     let _ = ReleaseDC(hwnd, hdc_src);
-                    if read_bitmap_bgra(mem_dc, hbm, width, height, out) {
+                    if read_bitmap_bgra(mem_dc, hbm, width, height, out) && !is_all_black(out, width, height) {
                         let _ = ReleaseDC(hwnd, hdc_window);
                         return true;
                     }
                 }
-                let _ = ReleaseDC(hwnd, hdc_window);
-                false
             }
+
+            // ── PASS 4: Second RedrawWindow + PrintWindow with FULLCONTENT ──
+            // Some stubborn apps need TWO repaint requests before they
+            // actually paint. Especially Chromium apps on hidden desktop
+            // that take a few frames to initialize their software compositor.
+            {
+                let _ = RedrawWindow(
+                    hwnd, None, None,
+                    RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW | RDW_ALLCHILDREN,
+                );
+                std::thread::sleep(Duration::from_millis(20));
+                let printed_retry = PrintWindow(
+                    hwnd, mem_dc,
+                    PW_CLIENTONLY | PW_RENDERFULLCONTENT,
+                ).as_bool();
+                if printed_retry && read_bitmap_bgra(mem_dc, hbm, width, height, out) && !is_all_black(out, width, height) {
+                    let _ = ReleaseDC(hwnd, hdc_window);
+                    return true;
+                }
+            }
+
+            // All passes produced black — return whatever the last pass gave us
+            // (still better than nothing, and the checksum logic will skip
+            // uploading identical black frames).
+            let _ = ReleaseDC(hwnd, hdc_window);
+            false
         }
     }
 }
