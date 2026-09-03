@@ -486,7 +486,6 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         // Skip activate_target for Chromium entirely: WM_ACTIVATE(WA_ACTIVE)
         // causes Discord/Electron apps to call SetForegroundWindow internally,
         // which steals Minecraft's foreground and fires phantom ESC.
-        // UIA handles Chromium clicks without needing window activation.
         if pressed && !is_chromium {
             activate_target(top, target);
         }
@@ -494,34 +493,41 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         if !is_chromium || !pressed {
             let _ = PostMessageW(target, msg, wparam, lparam);
         } else if is_chromium && pressed {
-            // For Chromium on HIDDEN desktop: send mouse click to top-level
-            // window (reaches browser chrome: tabs, address bar, navigation).
-            // Web content is handled by UIA. On VISIBLE desktop, skip —
-            // would steal Minecraft's foreground.
+            // Chromium on VISIBLE desktop: PostMessage works (window is visible
+            // and receiving real input). Skip UIA entirely — UIA COM calls to a
+            // visible-desktop Discord/Electron trigger SetForegroundWindow
+            // internally, stealing Minecraft's foreground and firing phantom ESC.
+            // Chromium on HIDDEN desktop: PostMessage to top-level (browser chrome)
+            // + UIA for web content.
             let hidden = super::process::is_on_hidden_desktop(top);
             if hidden {
                 let _ = PostMessageW(top, msg, wparam, lparam);
+            } else {
+                let _ = PostMessageW(target, msg, wparam, lparam);
             }
         }
     }
 
-    // UI Automation Invoke path on button-DOWN — for everything except classic
-    // list/tree controls (where PostMessage alone is correct and UIA would
-    // double-fire).
+    // UI Automation Invoke path — ONLY for hidden desktop Chromium and
+    // non-Chromium apps. For visible desktop Chromium, PostMessage alone
+    // handles clicks (UIA COM calls cause focus stealing / phantom ESC).
     //
-    // We run UIA for windows on BOTH desktops now. Modern apps (Chromium /
-    // Electron like Discord, UWP like Calculator) ignore synthesized PostMessage
-    // mouse input, so without UIA they render but never react ("just a picture")
-    // — and Discord/UWP frequently land on the VISIBLE desktop (a broker
-    // relaunches them), where we previously skipped UIA entirely. Our UIA path
-    // drives the element through Invoke/Select/Toggle/Expand on the app's own
-    // automation tree (resolved via ElementFromHandle, not ElementFromPoint) and
-    // does NOT call SetForegroundWindow, so it does not steal Minecraft's global
-    // foreground. That makes it safe to use for visible-desktop windows too.
+    // Modern apps (Chromium / Electron like Discord, UWP like Calculator)
+    // on the HIDDEN desktop ignore synthesized PostMessage mouse input, so
+    // without UIA they render but never react. Our UIA path drives the
+    // element through Invoke/Select/Toggle/Expand on the app's own
+    // automation tree (resolved via ElementFromHandle, not ElementFromPoint)
+    // and does NOT call SetForegroundWindow, so it does not steal Minecraft's
+    // global foreground. On the VISIBLE desktop, PostMessage works and UIA
+    // is skipped — UIA COM calls to visible Chromium trigger
+    // SetForegroundWindow internally, causing phantom ESC.
+    let on_hidden = super::process::is_on_hidden_desktop(top);
+    let skip_uia = is_chromium && !on_hidden;
     if pressed
         && button == 0x110
         && !is_classic_list
         && !is_text_edit
+        && !skip_uia
     {
         // Choose the window whose automation tree we resolve against, and the
         // child we compute screen coordinates from.
@@ -549,7 +555,7 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         // hidden-desktop Chromium), but is suppressed for visible-desktop
         // windows where SetFocus would steal Minecraft's focus and fire a
         // phantom ESC. We resolve it against the TOP-LEVEL window.
-        let on_hidden = super::process::is_on_hidden_desktop(top);
+        // `on_hidden` is already defined above.
         // SetFocus in the CLICK path is what makes clicking inside Opera/Chrome
         // WEB CONTENT actually work: much of a web page (a video, a canvas, a
         // custom-drawn control, an empty area of a page) exposes NO actionable
