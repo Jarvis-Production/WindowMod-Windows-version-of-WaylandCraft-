@@ -489,6 +489,14 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         let _ = PostMessageW(target, WM_MOUSEMOVE, move_wparam, lparam);
         if !is_chromium || !pressed {
             let _ = PostMessageW(target, msg, wparam, lparam);
+        } else if is_chromium && pressed {
+            // For Chromium on press: send PostMessage to the TOP-LEVEL window
+            // instead of the render widget. The browser chrome (tab bar,
+            // address bar, back/forward buttons) lives in the top-level
+            // Chrome_WidgetWin_1, NOT inside Chrome_RenderWidgetHostHWND.
+            // PostMessage to the render widget only reaches web content
+            // (which UIA handles anyway). Sending to top reaches the tabs.
+            let _ = PostMessageW(top, msg, wparam, lparam);
         }
     }
 
