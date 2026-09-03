@@ -229,6 +229,9 @@ public class WindowFramebuffer {
 	}
 	
 	private void registerTexture() {
+		if(target != null && texture == null) {
+			texture = new FramebufferTexture(getTextureView());
+		}
 		if(texture == null) return;
 		
 		location = Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, name());
