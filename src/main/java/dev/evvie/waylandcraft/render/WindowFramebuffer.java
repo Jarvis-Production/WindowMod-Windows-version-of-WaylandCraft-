@@ -6,11 +6,13 @@ import java.util.OptionalInt;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.Std140Builder;
 import com.mojang.blaze3d.buffers.Std140SizeCalculator;
+import com.mojang.blaze3d.opengl.GlStateManager;
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.DestFactor;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.SourceFactor;
 import com.mojang.blaze3d.shaders.UniformType;
 import com.mojang.blaze3d.systems.RenderPass;
@@ -33,6 +35,7 @@ import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.resources.Identifier;
+import org.lwjgl.opengl.GL33;
 
 public class WindowFramebuffer {
 	
@@ -49,7 +52,7 @@ public class WindowFramebuffer {
 		.build()
 	);
 	
-	public final WLCSurface surfaceTree;
+	public WLCSurface surfaceTree;
 	private RenderTarget target = null;
 	private FramebufferTexture texture = null;
 	private Identifier location = null;
@@ -58,15 +61,61 @@ public class WindowFramebuffer {
 	private int height = 0;
 	private int xoff;
 	private int yoff;
+	private GpuTextureView imageTextureView = null;
 	
 	private WindowFramebuffer(WLCSurface surfaceTree) {
 		this.surfaceTree = surfaceTree;
+	}
+	
+	private WindowFramebuffer() {
+		this.surfaceTree = null;
 	}
 	
 	public static WindowFramebuffer renderSurfaceTree(WLCSurface surfaceTree) {
 		WindowFramebuffer buf = new WindowFramebuffer(surfaceTree);
 		buf.init();
 		return buf;
+	}
+	
+	public static WindowFramebuffer fromNativeImage(NativeImage image) {
+		WindowFramebuffer buf = new WindowFramebuffer();
+		buf.width = image.getWidth();
+		buf.height = image.getHeight();
+		buf.xoff = 0;
+		buf.yoff = 0;
+		buf.uploadImage(image);
+		buf.registerTexture();
+		return buf;
+	}
+	
+	private void uploadImage(NativeImage image) {
+		if(width == 0 || height == 0) return;
+		
+		int texId = GlStateManager._genTexture();
+		GlStateManager._bindTexture(texId);
+		
+		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MAX_LEVEL, 0);
+		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MIN_LOD, 0);
+		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MAX_LOD, 0);
+		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MIN_FILTER, GL33.GL_LINEAR);
+		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MAG_FILTER, GL33.GL_NEAREST);
+		GlStateManager._pixelStore(GL33.GL_UNPACK_ROW_LENGTH, 0);
+		GlStateManager._pixelStore(GL33.GL_UNPACK_SKIP_PIXELS, 0);
+		GlStateManager._pixelStore(GL33.GL_UNPACK_SKIP_ROWS, 0);
+		GlStateManager._pixelStore(GL33.GL_UNPACK_ALIGNMENT, 4);
+		
+		long pixels = image.getPointer();
+		GL33.glTexImage2D(GL33.GL_TEXTURE_2D, 0, GL33.GL_RGBA8, width, height, 0, GL33.GL_RGBA, GL33.GL_UNSIGNED_BYTE, pixels);
+		
+		com.mojang.blaze3d.opengl.GlTexture glTexture = dev.evvie.waylandcraft.mixin.IGlTextureMixin.createTexture(
+			com.mojang.blaze3d.textures.GpuTexture.USAGE_TEXTURE_BINDING | com.mojang.blaze3d.textures.GpuTexture.USAGE_COPY_DST,
+			"image-framebuffer-" + this.hashCode(),
+			com.mojang.blaze3d.textures.TextureFormat.RGBA8,
+			width, height, 1, 1, texId
+		);
+		this.target = null;
+		this.imageTextureView = RenderSystem.getDevice().createTextureView(glTexture);
+		this.texture = new FramebufferTexture(this.imageTextureView);
 	}
 	
 	private void init() {
@@ -100,7 +149,10 @@ public class WindowFramebuffer {
 	}
 	
 	private String name() {
-		return "wayland-framebuffer-" + this.hashCode() + "-" + surfaceTree.hashCode();
+		if(surfaceTree != null) {
+			return "wayland-framebuffer-" + this.hashCode() + "-" + surfaceTree.hashCode();
+		}
+		return "image-framebuffer-" + this.hashCode();
 	}
 	
 	private void render() {
@@ -194,11 +246,9 @@ public class WindowFramebuffer {
 	}
 	
 	private void registerTexture() {
-		if(target == null) return;
+		if(texture == null) return;
 		
-		texture = new FramebufferTexture(getTextureView());
 		location = Identifier.fromNamespaceAndPath(WaylandCraft.MOD_ID, name());
-		
 		Minecraft.getInstance().getTextureManager().register(location, texture);
 	}
 	
@@ -229,8 +279,9 @@ public class WindowFramebuffer {
 	}
 	
 	public GpuTextureView getTextureView() {
-		if(target == null) return null;
-		return target.getColorTextureView();
+		if(target != null) return target.getColorTextureView();
+		if(imageTextureView != null) return imageTextureView;
+		return null;
 	}
 	
 	public Identifier getTextureLocation() {
@@ -238,7 +289,7 @@ public class WindowFramebuffer {
 	}
 	
 	public boolean isValid() {
-		return target != null;
+		return texture != null || target != null;
 	}
 	
 	private static class FramebufferTexture extends AbstractTexture {

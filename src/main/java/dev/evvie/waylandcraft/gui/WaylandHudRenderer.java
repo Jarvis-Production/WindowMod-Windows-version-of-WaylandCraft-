@@ -5,10 +5,6 @@ import java.util.Calendar;
 
 import org.joml.Matrix3x2fStack;
 
-import com.mojang.blaze3d.platform.NativeImage;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
-
 import dev.evvie.waylandcraft.WaylandCraft;
 import dev.evvie.waylandcraft.WaylandCraft.KeyboardCaptureMode;
 import dev.evvie.waylandcraft.bridge.IconSurface;
@@ -23,7 +19,6 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.Identifier;
@@ -114,35 +109,6 @@ public class WaylandHudRenderer {
 			stack.scale(1.0f / guiScale * 0.5f, 1.0f / guiScale * 0.5f);
 			RenderUtils.renderFramebuffer2D(context, buf, x, y, w, h);
 			stack.popMatrix();
-		}
-		
-		if(wlc.pinnedImage != null) {
-			try {
-				int imgW = wlc.pinnedImage.getWidth();
-				int imgH = wlc.pinnedImage.getHeight();
-				int maxDim = 256;
-				float scale = 1.0f;
-				if(imgW > maxDim || imgH > maxDim) {
-					scale = (float) maxDim / Math.max(imgW, imgH);
-				}
-				int drawW = (int)(imgW * scale);
-				int drawH = (int)(imgH * scale);
-
-				if(wlc.pinnedImageTexture == null) {
-					AbstractTexture tex = new AbstractTexture() {
-						{
-							this.texture = RenderSystem.getDevice().createTexture("pinned image", GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_COPY_DST, com.mojang.blaze3d.textures.TextureFormat.RGBA8, imgW, imgH, 1, 1);
-							RenderSystem.getDevice().createCommandEncoder().writeToTexture(this.texture, wlc.pinnedImage);
-							this.textureView = RenderSystem.getDevice().createTextureView(this.texture);
-						}
-					};
-					wlc.pinnedImageTexture = tex;
-					Minecraft.getInstance().getTextureManager().register(WaylandCraft.PINNED_IMAGE_ID, tex);
-				}
-				context.blit(WaylandCraft.PINNED_IMAGE_ID, 4, 4, 4 + drawW, 4 + drawH, 0.0f, 1.0f, 0.0f, 1.0f);
-			} catch(Throwable t) {
-				WaylandCraft.LOGGER.error("Error rendering pinned image", t);
-			}
 		}
 	}
 	

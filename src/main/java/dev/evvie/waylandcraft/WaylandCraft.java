@@ -14,6 +14,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.arguments.StringArgumentType;
 
 import dev.evvie.waylandcraft.WindowDisplay.DisplayHitResult;
+import dev.evvie.waylandcraft.bridge.ImageWindow;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow.SurfaceGeometry;
 import dev.evvie.waylandcraft.bridge.WLCPopup;
@@ -77,12 +78,7 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	public HitResult trueGameHitResult = null;
 	
 	public WLCToplevel pinnedToplevel = null;
-	public com.mojang.blaze3d.platform.NativeImage pinnedImage = null;
-	public net.minecraft.client.renderer.texture.AbstractTexture pinnedImageTexture = null;
-	public int pinnedImageWidth = 0;
-	public int pinnedImageHeight = 0;
-	public String pinnedImagePath = null;
-	public static final net.minecraft.resources.Identifier PINNED_IMAGE_ID = net.minecraft.resources.Identifier.fromNamespaceAndPath(MOD_ID, "pinned_image");
+	public ImageWindow pinnedImageWindow = null;
 	
 	public WindowItemManager itemManager = new WindowItemManager(this);
 	public XDGDesktopManager xdgManager;
@@ -164,16 +160,21 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 									return 1;
 								}
 								com.mojang.blaze3d.platform.NativeImage image = com.mojang.blaze3d.platform.NativeImage.read(new java.io.FileInputStream(file));
-								pinnedImage = image;
-								pinnedImageWidth = image.getWidth();
-								pinnedImageHeight = image.getHeight();
-								pinnedImagePath = path;
-								if(pinnedImageTexture != null) {
-									pinnedImageTexture.close();
-									pinnedImageTexture = null;
-								}
+								int imgW = image.getWidth();
+								int imgH = image.getHeight();
+								
+								dev.evvie.waylandcraft.render.WindowFramebuffer fb = dev.evvie.waylandcraft.render.WindowFramebuffer.fromNativeImage(image);
+								ImageWindow imgWindow = new ImageWindow(path, imgW, imgH, fb);
+								pinnedImageWindow = imgWindow;
+								
+								WindowDisplay display = new WindowDisplay(imgWindow);
+								displays.add(display);
+								
+								Camera cam = mc.gameRenderer.getMainCamera();
+								display.anchorToCamera(cam);
+								
 								if(mc.player != null) {
-									mc.player.displayClientMessage(Component.literal("Image loaded (" + image.getWidth() + "x" + image.getHeight() + ") — displaying on HUD"), false);
+									mc.player.displayClientMessage(Component.literal("Image opened as window (" + imgW + "x" + imgH + ")"), false);
 								}
 							} catch(Throwable t) {
 								LOGGER.error("Failed to load image: " + path, t);
@@ -297,6 +298,10 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 		
 		if(pinnedToplevel != null && pinnedToplevel.isAlive() && hasDisplayFor(pinnedToplevel)) {
 			getOrCreateDisplay(pinnedToplevel).anchorToCamera(camera);
+		}
+		
+		if(pinnedImageWindow != null && pinnedImageWindow.isAlive() && hasDisplayFor(pinnedImageWindow)) {
+			getOrCreateDisplay(pinnedImageWindow).anchorToCamera(camera);
 		}
 		
 		updateOutputSize(inWMScreen);
