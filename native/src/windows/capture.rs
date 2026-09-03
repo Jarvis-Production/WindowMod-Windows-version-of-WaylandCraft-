@@ -180,6 +180,12 @@ fn capture_one_window(hwnd_isize: isize) {
     // Per-thread scratch buffer, grown as needed and reused across frames.
     let mut scratch: Vec<u8> = Vec::new();
 
+    // Track consecutive WGC failures so we can fall back to PrintWindow when
+    // WGC silently produces no frames (e.g. on a hidden desktop where DWM
+    // doesn't composite the target window).
+    let mut wgc_consecutive_none: u32 = 0;
+    const WGC_NONE_THRESHOLD: u32 = 30; // ~120 ms at 4 ms per tick
+
     // Capture cadence. We want the window content to feel as live as the real
     // desktop (matching a 100+ FPS game), but we must not spin the CPU or hammer
     // the shared `frames()` mutex the render thread also locks.
@@ -250,13 +256,29 @@ fn capture_one_window(hwnd_isize: isize) {
             // frame is ready yet (keep the previous one) — that is normal and
             // means the window content did not change.
             match cap.grab(&mut scratch) {
-                Some((w, h)) => Some((w, h)),
+                Some((w, h)) => {
+                    wgc_consecutive_none = 0;
+                    Some((w, h))
+                }
                 None => {
-                    // On hidden desktops DWM may not composite the window
-                    // until it is explicitly told to repaint. Nudge it so
-                    // WGC gets a real frame instead of staying black.
-                    maybe_request_repaint(hwnd_isize);
-                    None
+                    wgc_consecutive_none += 1;
+                    if wgc_consecutive_none >= WGC_NONE_THRESHOLD {
+                        // WGC produces no frames — likely a hidden desktop
+                        // where DWM doesn't composite. Drop WGC so we fall
+                        // through to the PrintWindow path below.
+                        eprintln!(
+                            "[windowmod] capture_one_window: WGC returned None {} times for HWND {:?}, falling back to PrintWindow",
+                            wgc_consecutive_none, hwnd
+                        );
+                        drop(wgc.take());
+                        None
+                    } else {
+                        // On hidden desktops DWM may not composite the window
+                        // until it is explicitly told to repaint. Nudge it so
+                        // WGC gets a real frame instead of staying black.
+                        maybe_request_repaint(hwnd_isize);
+                        None
+                    }
                 }
             }
         } else {

@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
+
 import dev.evvie.waylandcraft.WindowDisplay.DisplayHitResult;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow;
 import dev.evvie.waylandcraft.bridge.WLCAbstractWindow.SurfaceGeometry;
@@ -40,6 +42,9 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldExtractionContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
@@ -122,6 +127,31 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 		
 		WindowItemModel.register();
 		hudRenderer.register();
+		
+		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+			dispatcher.register(ClientCommandManager.literal("window")
+				.then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
+					.executes(ctx -> {
+						String path = StringArgumentType.getString(ctx, "path").trim();
+						Minecraft mc = Minecraft.getInstance();
+						if(mc.player != null) {
+							mc.player.displayClientMessage(Component.literal("Launching: " + path), false);
+						}
+						if(bridge != null) {
+							boolean ok = bridge.launchExe(path);
+							if(mc.player != null) {
+								mc.player.displayClientMessage(Component.literal(ok ? "Launched!" : "Failed to launch"), false);
+							}
+						} else {
+							if(mc.player != null) {
+								mc.player.displayClientMessage(Component.literal("Bridge not initialized"), false);
+							}
+						}
+						return 1;
+					})
+				)
+			);
+		});
 	}
 	
 	/* Update bridge and clients. May be called at any state of the game, even outside of a level

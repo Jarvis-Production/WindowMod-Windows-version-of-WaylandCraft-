@@ -281,6 +281,10 @@ bind_java_type! {
             sig = (instance: jlong, app_id: JString) -> jboolean,
             fn = exec_app,
         },
+        static extern fn launch_exe {
+            sig = (instance: jlong, path: JString) -> jboolean,
+            fn = launch_exe,
+        },
         static extern fn set_preferred_terminal {
             sig = (instance: jlong, cmd: JString),
             fn = set_preferred_terminal,
@@ -1304,6 +1308,34 @@ fn exec_app<'local>(
     eprintln!("[windowmod] bridge::exec_app called with app_id='{}'", app_id);
     let result = process::spawn_app(instance!(instance), &app_id);
     eprintln!("[windowmod] bridge::exec_app result: {}", result);
+    Ok(result)
+}
+
+fn launch_exe<'local>(
+    env: &mut Env<'local>,
+    _class: JClass<'local>,
+    instance: jlong,
+    path: JString<'local>,
+) -> Result<jboolean, BridgeError> {
+    let path = path.try_to_string(env)?;
+    eprintln!("[windowmod] bridge::launch_exe called with path='{}'", path);
+    let state = instance!(instance);
+    let app = apps::DesktopApp {
+        app_id: path.clone(),
+        name: None,
+        generic_name: None,
+        exec: Some(path.clone()),
+        exec_args: None,
+        working_dir: None,
+        exec_terminal: false,
+        comment: None,
+        keywords: Vec::new(),
+        categories: Vec::new(),
+        visible: true,
+        icon_path: None,
+    };
+    let result = process::spawn_desktop_app(state, &app);
+    eprintln!("[windowmod] bridge::launch_exe result: {}", result);
     Ok(result)
 }
 

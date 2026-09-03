@@ -644,6 +644,10 @@ public class WaylandCraftBridge {
 		return execApp(instance, appId);
 	}
 	
+	public boolean launchExe(String path) {
+		return launchExe(instance, path);
+	}
+	
 	public void setPreferredTerminal(String cmd) {
 		setPreferredTerminal(instance, cmd);
 	}
@@ -763,6 +767,7 @@ public class WaylandCraftBridge {
 	private static native boolean renderSVG(String path, int width, int height, long ptr);
 	
 	private static native boolean execApp(long instance, String appId);
+	private static native boolean launchExe(long instance, String path);
 	private static native void setPreferredTerminal(long instance, String cmd);
 	
 	private static native void setKeymapDefault(long instance);
