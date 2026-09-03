@@ -1320,13 +1320,18 @@ fn launch_exe<'local>(
     let path = path.try_to_string(env)?;
     eprintln!("[windowmod] bridge::launch_exe called with path='{}'", path);
     let state = instance!(instance);
+
+    let working_dir = std::path::Path::new(path.as_str())
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned());
+
     let app = apps::DesktopApp {
         app_id: path.clone(),
         name: None,
         generic_name: None,
         exec: Some(path.clone()),
         exec_args: None,
-        working_dir: None,
+        working_dir,
         exec_terminal: false,
         comment: None,
         keywords: Vec::new(),

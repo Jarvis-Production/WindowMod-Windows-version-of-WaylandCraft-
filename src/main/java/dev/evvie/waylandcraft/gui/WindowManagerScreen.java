@@ -148,7 +148,7 @@ public class WindowManagerScreen extends Screen {
 		
 		killButton = Button.builder(Component.literal("Kill"), this::onKillPressed)
 				.pos(3, topMargin + 90)
-				.size(40, 20)
+				.size(22, 20)
 				.build();
 		killButton.setTooltip(Tooltip.create(Component.literal("Kill selected app")));
 		killButton.setTooltipDelay(Duration.ofMillis(700));

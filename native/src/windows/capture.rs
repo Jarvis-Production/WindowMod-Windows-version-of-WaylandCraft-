@@ -649,6 +649,13 @@ impl GdiCapture {
             }
             let hbm = self.bitmap.unwrap();
 
+            // Force synchronous repaint so apps on hidden desktops paint
+            // before we capture. RDW_UPDATENOW blocks until WM_PAINT is
+            // processed — avoids stale black frames from apps that stopped
+            // repainting when hidden.
+            use windows::Win32::Graphics::Gdi::{RedrawWindow, RDW_ALLCHILDREN, RDW_INVALIDATE, RDW_UPDATENOW};
+            let _ = RedrawWindow(hwnd, None, None, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+
             // Capture the CLIENT area only (see PW_CLIENTONLY note below). Without
             // it, PrintWindow renders the whole window frame and shifts client
             // content down, misaligning clicks. PW_RENDERFULLCONTENT keeps
@@ -656,14 +663,57 @@ impl GdiCapture {
             let printed =
                 PrintWindow(hwnd, mem_dc, PW_CLIENTONLY | PW_RENDERFULLCONTENT).as_bool();
 
-            let ok = if printed {
-                read_bitmap_bgra(mem_dc, hbm, width, height, out)
+            if printed {
+                if read_bitmap_bgra(mem_dc, hbm, width, height, out) {
+                    // Check if the frame is all-black (Electron/D3D apps on
+                    // hidden desktop return success but black pixels).
+                    if !is_all_black(out, width, height) {
+                        let _ = ReleaseDC(hwnd, hdc_window);
+                        return true;
+                    }
+                    // All-black from PrintWindow — try BitBlt as fallback.
+                    // BitBlt captures GDI content directly from the window DC
+                    // which can sometimes succeed where PrintWindow fails.
+                    let hdc_src = GetDC(hwnd);
+                    if !hdc_src.is_invalid() {
+                        let _ = windows::Win32::Graphics::Gdi::BitBlt(
+                            mem_dc, 0, 0, width, height,
+                            hdc_src, 0, 0,
+                            windows::Win32::Graphics::Gdi::SRCCOPY,
+                        );
+                        let _ = ReleaseDC(hwnd, hdc_src);
+                        if read_bitmap_bgra(mem_dc, hbm, width, height, out) {
+                            if !is_all_black(out, width, height) {
+                                let _ = ReleaseDC(hwnd, hdc_window);
+                                return true;
+                            }
+                        }
+                    }
+                    // Both failed — return the black PrintWindow frame as-is.
+                    let _ = ReleaseDC(hwnd, hdc_window);
+                    true
+                } else {
+                    let _ = ReleaseDC(hwnd, hdc_window);
+                    false
+                }
             } else {
+                // PrintWindow itself failed — try BitBlt as last resort.
+                let hdc_src = GetDC(hwnd);
+                if !hdc_src.is_invalid() {
+                    let _ = windows::Win32::Graphics::Gdi::BitBlt(
+                        mem_dc, 0, 0, width, height,
+                        hdc_src, 0, 0,
+                        windows::Win32::Graphics::Gdi::SRCCOPY,
+                    );
+                    let _ = ReleaseDC(hwnd, hdc_src);
+                    if read_bitmap_bgra(mem_dc, hbm, width, height, out) {
+                        let _ = ReleaseDC(hwnd, hdc_window);
+                        return true;
+                    }
+                }
+                let _ = ReleaseDC(hwnd, hdc_window);
                 false
-            };
-
-            let _ = ReleaseDC(hwnd, hdc_window);
-            ok
+            }
         }
     }
 }
@@ -680,6 +730,38 @@ impl Drop for GdiCapture {
             }
         }
     }
+}
+
+/// Quick heuristic: sample 64 pixels across the frame — if ALL are black
+/// (BGRA == 0), the frame is useless.  This avoids uploading identical black
+/// frames every frame and lets the render thread skip the upload entirely.
+fn is_all_black(data: &[u8], w: i32, h: i32) -> bool {
+    let stride = (w * 4) as usize;
+    let total = data.len();
+    if total == 0 || w < 1 || h < 1 {
+        return true;
+    }
+    let mut black_count = 0u32;
+    let mut sampled = 0u32;
+    let step_y = if h > 8 { h / 8 } else { 1 };
+    let step_x = if w > 8 { w / 8 } else { 1 };
+    let mut y = 0i32;
+    while y < h && sampled < 64 {
+        let row_off = (y as usize) * stride;
+        let mut x = 0i32;
+        while x < w && sampled < 64 {
+            let off = row_off + (x as usize) * 4;
+            if off + 3 < total {
+                if data[off] == 0 && data[off + 1] == 0 && data[off + 2] == 0 && data[off + 3] == 0 {
+                    black_count += 1;
+                }
+            }
+            sampled += 1;
+            x += step_x;
+        }
+        y += step_y;
+    }
+    sampled > 0 && black_count == sampled
 }
 
 
