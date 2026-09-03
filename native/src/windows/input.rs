@@ -490,9 +490,18 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         if !is_chromium || !pressed {
             let _ = PostMessageW(target, msg, wparam, lparam);
         } else if is_chromium && pressed {
+            // For Chromium on press: skip mouse PostMessage to render widget
+            // (avoids double-fire with UIA Invoke). Send Escape SYNCHRONOUSLY
+            // (SendMessageW) to dismiss any open omnibox/autocomplete popup
+            // BEFORE the UIA invoke fires. PostMessage was async — Chromium
+            // hadn't processed Escape by the time UIA invoked the element.
             let hidden = super::process::is_on_hidden_desktop(top);
             if hidden {
-                let _ = PostMessageW(top, msg, wparam, lparam);
+                let scan_esc = 1u32;
+                let lparam_esc = LPARAM((scan_esc << 16) as isize);
+                let lparam_esc_up = LPARAM(((1u32 << 30) | (1u32 << 31) | (scan_esc << 16)) as isize);
+                let _ = SendMessageW(target, WM_KEYDOWN, WPARAM(0x1B), lparam_esc);
+                let _ = SendMessageW(target, WM_KEYUP, WPARAM(0x1B), lparam_esc_up);
             }
         }
     }

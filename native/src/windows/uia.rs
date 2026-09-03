@@ -25,7 +25,6 @@ use std::sync::{Mutex, OnceLock};
 
 use windows::core::Interface;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{SendMessageW, WM_KEYDOWN, WM_KEYUP};
 
 
 
@@ -390,25 +389,8 @@ fn invoke_element_at(
             name, ctrl_type, is_chromium,
         );
 
-        // Dismiss Chromium autocomplete/omnibox popup overlays. When the user
-        // types in Opera/Chrome address bar, an autocomplete dropdown appears.
-        // This overlay persists when clicking page content, covering it.
-        // Sending Escape before the click dismisses the popup. Only on hidden
-        // desktop — safe, won't steal Minecraft's foreground.
-        if is_chromium && super::process::is_on_hidden_desktop(HWND(hwnd as *mut _)) {
-            let _ = SendMessageW(
-                HWND(hwnd as *mut _),
-                WM_KEYDOWN,
-                WPARAM(0x1B), // VK_ESCAPE
-                LPARAM(0x00010001), // scan code 1
-            );
-            let _ = SendMessageW(
-                HWND(hwnd as *mut _),
-                WM_KEYUP,
-                WPARAM(0x1B),
-                LPARAM(0xC0010001), // scan code 1 + transition state
-            );
-        }
+
+
 
         // ExpandCollapsePattern — top-level menu bar items (File/View/...),
         // combo boxes, tree items. These must EXPAND on click, not Invoke
