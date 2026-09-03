@@ -483,7 +483,11 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
     // Chrome_RenderWidgetHostHWND can sometimes trigger a click in addition
     // to UIA Invoke, causing double-activation. Keep mouse-move for hover.
     unsafe {
-        if pressed && !(is_chromium && !super::process::is_on_hidden_desktop(top)) {
+        // Skip activate_target for Chromium entirely: WM_ACTIVATE(WA_ACTIVE)
+        // causes Discord/Electron apps to call SetForegroundWindow internally,
+        // which steals Minecraft's foreground and fires phantom ESC.
+        // UIA handles Chromium clicks without needing window activation.
+        if pressed && !is_chromium {
             activate_target(top, target);
         }
         let _ = PostMessageW(target, WM_MOUSEMOVE, move_wparam, lparam);
