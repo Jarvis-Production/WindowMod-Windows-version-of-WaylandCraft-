@@ -6,7 +6,6 @@ import java.util.OptionalInt;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.Std140Builder;
 import com.mojang.blaze3d.buffers.Std140SizeCalculator;
-import com.mojang.blaze3d.opengl.GlStateManager;
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderTarget;
@@ -17,6 +16,7 @@ import com.mojang.blaze3d.platform.SourceFactor;
 import com.mojang.blaze3d.shaders.UniformType;
 import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
@@ -35,7 +35,6 @@ import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.opengl.GL33;
 
 public class WindowFramebuffer {
 	
@@ -77,44 +76,28 @@ public class WindowFramebuffer {
 		return buf;
 	}
 	
-	public static WindowFramebuffer fromNativeImage(NativeImage image) {
+	public static WindowFramebuffer fromNativeImage(NativeImage image, int displayW, int displayH) {
 		WindowFramebuffer buf = new WindowFramebuffer();
-		buf.width = image.getWidth();
-		buf.height = image.getHeight();
+		buf.width = displayW;
+		buf.height = displayH;
 		buf.xoff = 0;
 		buf.yoff = 0;
-		buf.uploadImage(image);
+		buf.uploadImage(image, displayW, displayH);
 		buf.registerTexture();
 		return buf;
 	}
 	
-	private void uploadImage(NativeImage image) {
-		if(width == 0 || height == 0) return;
+	private void uploadImage(NativeImage image, int displayW, int displayH) {
+		if(displayW == 0 || displayH == 0) return;
 		
-		int texId = GlStateManager._genTexture();
-		GlStateManager._bindTexture(texId);
-		
-		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MAX_LEVEL, 0);
-		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MIN_LOD, 0);
-		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MAX_LOD, 0);
-		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MIN_FILTER, GL33.GL_LINEAR);
-		GlStateManager._texParameter(GL33.GL_TEXTURE_2D, GL33.GL_TEXTURE_MAG_FILTER, GL33.GL_NEAREST);
-		GlStateManager._pixelStore(GL33.GL_UNPACK_ROW_LENGTH, 0);
-		GlStateManager._pixelStore(GL33.GL_UNPACK_SKIP_PIXELS, 0);
-		GlStateManager._pixelStore(GL33.GL_UNPACK_SKIP_ROWS, 0);
-		GlStateManager._pixelStore(GL33.GL_UNPACK_ALIGNMENT, 4);
-		
-		long pixels = image.getPointer();
-		GL33.glTexImage2D(GL33.GL_TEXTURE_2D, 0, GL33.GL_RGBA8, width, height, 0, GL33.GL_RGBA, GL33.GL_UNSIGNED_BYTE, pixels);
-		
-		com.mojang.blaze3d.opengl.GlTexture glTexture = dev.evvie.waylandcraft.mixin.IGlTextureMixin.createTexture(
-			com.mojang.blaze3d.textures.GpuTexture.USAGE_TEXTURE_BINDING | com.mojang.blaze3d.textures.GpuTexture.USAGE_COPY_DST,
+		GpuTexture gpuTexture = RenderSystem.getDevice().createTexture(
 			"image-framebuffer-" + this.hashCode(),
+			GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_COPY_DST,
 			com.mojang.blaze3d.textures.TextureFormat.RGBA8,
-			width, height, 1, 1, texId
+			displayW, displayH, 1, 1
 		);
-		this.target = null;
-		this.imageTextureView = RenderSystem.getDevice().createTextureView(glTexture);
+		RenderSystem.getDevice().createCommandEncoder().writeToTexture(gpuTexture, image);
+		this.imageTextureView = RenderSystem.getDevice().createTextureView(gpuTexture);
 		this.texture = new FramebufferTexture(this.imageTextureView);
 	}
 	

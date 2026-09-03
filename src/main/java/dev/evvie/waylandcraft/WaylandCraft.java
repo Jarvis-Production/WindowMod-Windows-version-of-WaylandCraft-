@@ -160,11 +160,20 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 									return 1;
 								}
 								com.mojang.blaze3d.platform.NativeImage image = com.mojang.blaze3d.platform.NativeImage.read(new java.io.FileInputStream(file));
-								int imgW = image.getWidth();
-								int imgH = image.getHeight();
+								int origW = image.getWidth();
+								int origH = image.getHeight();
 								
-								dev.evvie.waylandcraft.render.WindowFramebuffer fb = dev.evvie.waylandcraft.render.WindowFramebuffer.fromNativeImage(image);
-								ImageWindow imgWindow = new ImageWindow(path, imgW, imgH, fb);
+								int maxDisplaySize = 400;
+								int displayW = origW;
+								int displayH = origH;
+								if(origW > maxDisplaySize || origH > maxDisplaySize) {
+									float scale = (float) maxDisplaySize / Math.max(origW, origH);
+									displayW = (int)(origW * scale);
+									displayH = (int)(origH * scale);
+								}
+								
+								dev.evvie.waylandcraft.render.WindowFramebuffer fb = dev.evvie.waylandcraft.render.WindowFramebuffer.fromNativeImage(image, displayW, displayH);
+								ImageWindow imgWindow = new ImageWindow(path, displayW, displayH, fb);
 								pinnedImageWindow = imgWindow;
 								
 								WindowDisplay display = new WindowDisplay(imgWindow);
@@ -174,7 +183,7 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 								display.anchorToCamera(cam);
 								
 								if(mc.player != null) {
-									mc.player.displayClientMessage(Component.literal("Image opened as window (" + imgW + "x" + imgH + ")"), false);
+									mc.player.displayClientMessage(Component.literal("Image opened as window (" + origW + "x" + origH + " -> " + displayW + "x" + displayH + ")"), false);
 								}
 							} catch(Throwable t) {
 								LOGGER.error("Failed to load image: " + path, t);
@@ -298,10 +307,6 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 		
 		if(pinnedToplevel != null && pinnedToplevel.isAlive() && hasDisplayFor(pinnedToplevel)) {
 			getOrCreateDisplay(pinnedToplevel).anchorToCamera(camera);
-		}
-		
-		if(pinnedImageWindow != null && pinnedImageWindow.isAlive() && hasDisplayFor(pinnedImageWindow)) {
-			getOrCreateDisplay(pinnedImageWindow).anchorToCamera(camera);
 		}
 		
 		updateOutputSize(inWMScreen);
