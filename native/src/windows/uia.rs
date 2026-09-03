@@ -445,16 +445,14 @@ fn invoke_element_at(
         // For NON-Chromium apps (WinUI/UWP) this is needed because their
         // automation tree has host containers that hide real elements.
         //
-        // For CHROMIUM apps this is SKIPPED: FindAll(TreeScope_Descendants)
-        // on a busy Chromium renderer with thousands of elements blocks for
-        // seconds and freezes the browser. Chromium's `deepest_at` walk above
-        // already finds the real web element; if it didn't expose a pattern,
-        // there's nothing actionable at that point.
-        if !is_chromium {
-            if let Some(()) = invoke_actionable_descendant(automation, &root, sx, sy) {
-                mark_woken(hwnd);
-                return Ok(());
-            }
+        // Search the whole subtree of the TARGET ROOT (not just `element`) for
+        // the deepest descendant at the point that DOES expose an actionable
+        // pattern, and invoke it. The BFS is bounded (max 400 nodes) and
+        // spatially pruned (only descends into children containing the click
+        // point), so it stays fast even on large Chromium trees.
+        if let Some(()) = invoke_actionable_descendant(automation, &root, sx, sy) {
+            mark_woken(hwnd);
+            return Ok(());
         }
 
         // Nothing actionable at this point — fall back to focusing the element
