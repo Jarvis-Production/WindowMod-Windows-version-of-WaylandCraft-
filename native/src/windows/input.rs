@@ -483,7 +483,7 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
     // Chrome_RenderWidgetHostHWND can sometimes trigger a click in addition
     // to UIA Invoke, causing double-activation. Keep mouse-move for hover.
     unsafe {
-        if pressed {
+        if pressed && !(is_chromium && !super::process::is_on_hidden_desktop(top)) {
             activate_target(top, target);
         }
         let _ = PostMessageW(target, WM_MOUSEMOVE, move_wparam, lparam);
