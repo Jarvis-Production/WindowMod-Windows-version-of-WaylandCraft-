@@ -5,6 +5,10 @@ import java.util.Calendar;
 
 import org.joml.Matrix3x2fStack;
 
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.GpuTexture;
+
 import dev.evvie.waylandcraft.WaylandCraft;
 import dev.evvie.waylandcraft.WaylandCraft.KeyboardCaptureMode;
 import dev.evvie.waylandcraft.bridge.IconSurface;
@@ -19,6 +23,7 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.Identifier;
@@ -124,10 +129,17 @@ public class WaylandHudRenderer {
 				int drawH = (int)(imgH * scale);
 
 				if(wlc.pinnedImageTexture == null) {
-					wlc.pinnedImageTexture = new net.minecraft.client.renderer.texture.DynamicTexture(() -> "windowmod_pinned_img", wlc.pinnedImage);
-					Minecraft.getInstance().getTextureManager().register(WaylandCraft.PINNED_IMAGE_ID, wlc.pinnedImageTexture);
+					AbstractTexture tex = new AbstractTexture() {
+						{
+							this.texture = RenderSystem.getDevice().createTexture("pinned image", GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_COPY_DST, com.mojang.blaze3d.textures.TextureFormat.RGBA8, imgW, imgH, 1, 1);
+							RenderSystem.getDevice().createCommandEncoder().writeToTexture(this.texture, wlc.pinnedImage);
+							this.textureView = RenderSystem.getDevice().createTextureView(this.texture);
+						}
+					};
+					wlc.pinnedImageTexture = tex;
+					Minecraft.getInstance().getTextureManager().register(WaylandCraft.PINNED_IMAGE_ID, tex);
 				}
-				context.blit(WaylandCraft.PINNED_IMAGE_ID, 4, 4, 0, 0, drawW, drawH, imgW, imgH);
+				context.blit(WaylandCraft.PINNED_IMAGE_ID, 4, 4, 4 + drawW, 4 + drawH, 0.0f, 1.0f, 0.0f, 1.0f);
 			} catch(Throwable t) {
 				WaylandCraft.LOGGER.error("Error rendering pinned image", t);
 			}

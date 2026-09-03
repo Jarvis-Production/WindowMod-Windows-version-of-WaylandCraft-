@@ -78,7 +78,9 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	
 	public WLCToplevel pinnedToplevel = null;
 	public com.mojang.blaze3d.platform.NativeImage pinnedImage = null;
-	public net.minecraft.client.renderer.texture.DynamicTexture pinnedImageTexture = null;
+	public net.minecraft.client.renderer.texture.AbstractTexture pinnedImageTexture = null;
+	public int pinnedImageWidth = 0;
+	public int pinnedImageHeight = 0;
 	public String pinnedImagePath = null;
 	public static final net.minecraft.resources.Identifier PINNED_IMAGE_ID = net.minecraft.resources.Identifier.fromNamespaceAndPath(MOD_ID, "pinned_image");
 	
@@ -163,7 +165,13 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 								}
 								com.mojang.blaze3d.platform.NativeImage image = com.mojang.blaze3d.platform.NativeImage.read(new java.io.FileInputStream(file));
 								pinnedImage = image;
+								pinnedImageWidth = image.getWidth();
+								pinnedImageHeight = image.getHeight();
 								pinnedImagePath = path;
+								if(pinnedImageTexture != null) {
+									pinnedImageTexture.close();
+									pinnedImageTexture = null;
+								}
 								if(mc.player != null) {
 									mc.player.displayClientMessage(Component.literal("Image loaded (" + image.getWidth() + "x" + image.getHeight() + ") — displaying on HUD"), false);
 								}

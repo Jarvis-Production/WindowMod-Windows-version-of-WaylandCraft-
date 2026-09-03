@@ -86,7 +86,6 @@ pub fn spawn_desktop_app(state: &mut WindowMod, app: &DesktopApp) -> bool {
             "--disable-renderer-backgrounding",
             "--disable-background-timer-throttling",
             "--disable-gpu-compositing",
-            "--disable-gpu",
         ] {
             // Avoid duplicating a flag the shortcut already carries.
             if !arg_storage.iter().any(|a| a.starts_with(flag.split('=').next().unwrap_or(flag))) {
