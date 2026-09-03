@@ -354,7 +354,6 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
     // (a GPU compositor layer that ignores synthesized input). Redirect mouse
     // messages to the real `Chrome_RenderWidgetHostHWND`, which consumes them.
     // This is what makes clicking inside Opera/Chrome web content work.
-    let mut chromium_redirect = false;
     if class_name(target) == "Intermediate D3D Window" {
         if let Some((widget, wx, wy)) =
             chromium_input_target(top, state.pointer_x as i32, state.pointer_y as i32)
@@ -362,7 +361,6 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
             target = widget;
             lx = wx;
             ly = wy;
-            chromium_redirect = true;
         }
     }
     let lparam = pack_coords_i(lx, ly);
@@ -443,8 +441,6 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
     // contains the REAL web content. `deepest_at` then walks down to the element
     // under the cursor by screen coordinates regardless of which child HWND the
     // pixel-level hit test happened to return. So we no longer suppress UIA here.
-    let is_chromium_render = false;
-    let _ = is_chromium_render;
 
     // Should UIA be resolved against the TOP-LEVEL window rather than the
     // deepest child? Yes for self-rendering apps whose actionable automation
@@ -460,6 +456,17 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         || top_cls_now == "Chrome_WidgetWin_1"
         || top_cls_now == "Chrome_WidgetWin_0"
         || top_cls_now == "SDL_app";
+
+    // Detect Chromium/Electron apps. For these, PostMessage to the render
+    // widget (Chrome_RenderWidgetHostHWND) actually works — the old comment
+    // about "ignoring PostMessage" applied to Intermediate D3D Window, NOT
+    // to the render widget itself. Since PostMessage works AND UIA Invoke
+    // also works, running both causes DOUBLE-ACTIVATION (e.g. a mute button
+    // in Discord toggles twice → appears as "self-release").
+    // Fix: skip UIA entirely for Chromium apps; PostMessage alone is enough.
+    let is_chromium = top_cls_now == "Chrome_WidgetWin_1"
+        || top_cls_now == "Chrome_WidgetWin_0"
+        || target_cls == "Chrome_RenderWidgetHostHWND";
 
 
 
@@ -498,7 +505,7 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         && button == 0x110
         && !is_classic_list
         && !is_text_edit
-        && !chromium_redirect
+        && !is_chromium
     {
         // Choose the window whose automation tree we resolve against, and the
         // child we compute screen coordinates from.
