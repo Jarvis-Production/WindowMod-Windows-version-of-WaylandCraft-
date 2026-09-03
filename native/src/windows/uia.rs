@@ -381,9 +381,12 @@ fn invoke_element_at(
 
         let name = element.CurrentName().map(|b| b.to_string()).unwrap_or_default();
         let ctrl_type = element.CurrentControlType().map(|t| t.0).unwrap_or(0);
+        let top_cls = super::input::class_name(HWND(hwnd as *mut _));
+        let is_chromium = top_cls == "Chrome_WidgetWin_1"
+            || top_cls == "Chrome_WidgetWin_0";
         eprintln!(
-            "[windowmod][uia] hwnd={hwnd:#x} elem at ({sx},{sy}) name='{}' controlType={}",
-            name, ctrl_type,
+            "[windowmod][uia] hwnd={hwnd:#x} elem at ({sx},{sy}) name='{}' controlType={} is_chromium={}",
+            name, ctrl_type, is_chromium,
         );
 
         // ExpandCollapsePattern — top-level menu bar items (File/View/...),
@@ -439,15 +442,19 @@ fn invoke_element_at(
         // ROOT (not just `element`) for the deepest descendant at the point that
         // DOES expose an actionable pattern, and invoke it.
         //
-        // We search from `root`, not `element`: the log showed `deepest_at`
-        // bottoming out at the root Chromium Pane (controlType=50033) with no
-        // navigable children, so searching only its subtree found nothing.
-        // Searching the whole window subtree via TreeScope_Descendants reaches
-        // the real web buttons/links/inputs once accessibility has built them.
-        if let Some(()) = invoke_actionable_descendant(automation, &root, sx, sy) {
-            // The tree had real, actionable content → it is built. Stop probing.
-            mark_woken(hwnd);
-            return Ok(());
+        // For NON-Chromium apps (WinUI/UWP) this is needed because their
+        // automation tree has host containers that hide real elements.
+        //
+        // For CHROMIUM apps this is SKIPPED: FindAll(TreeScope_Descendants)
+        // on a busy Chromium renderer with thousands of elements blocks for
+        // seconds and freezes the browser. Chromium's `deepest_at` walk above
+        // already finds the real web element; if it didn't expose a pattern,
+        // there's nothing actionable at that point.
+        if !is_chromium {
+            if let Some(()) = invoke_actionable_descendant(automation, &root, sx, sy) {
+                mark_woken(hwnd);
+                return Ok(());
+            }
         }
 
         // Nothing actionable at this point — fall back to focusing the element

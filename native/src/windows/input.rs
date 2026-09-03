@@ -44,7 +44,7 @@ extern "system" {
 }
 
 
-fn class_name(hwnd: HWND) -> String {
+pub fn class_name(hwnd: HWND) -> String {
 
     let mut buf = [0u16; 128];
     let len = unsafe { GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
