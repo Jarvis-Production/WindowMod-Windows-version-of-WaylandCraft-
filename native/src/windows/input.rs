@@ -493,17 +493,12 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         if !is_chromium || !pressed {
             let _ = PostMessageW(target, msg, wparam, lparam);
         } else if is_chromium && pressed {
-            // Chromium on VISIBLE desktop: PostMessage works (window is visible
-            // and receiving real input). Skip UIA entirely — UIA COM calls to a
-            // visible-desktop Discord/Electron trigger SetForegroundWindow
-            // internally, stealing Minecraft's foreground and firing phantom ESC.
-            // Chromium on HIDDEN desktop: PostMessage to top-level (browser chrome)
-            // + UIA for web content.
-            let hidden = super::process::is_on_hidden_desktop(top);
-            if hidden {
+            // Hidden desktop Chromium: PostMessage to top-level for browser
+            // chrome (Opera tabs, address bar). UIA handles web content.
+            // Visible desktop Chromium: skip ALL PostMessage — causes
+            // SetForegroundWindow → phantom ESC.
+            if super::process::is_on_hidden_desktop(top) {
                 let _ = PostMessageW(top, msg, wparam, lparam);
-            } else {
-                let _ = PostMessageW(target, msg, wparam, lparam);
             }
         }
     }
@@ -521,8 +516,13 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
     // global foreground. On the VISIBLE desktop, PostMessage works and UIA
     // is skipped — UIA COM calls to visible Chromium trigger
     // SetForegroundWindow internally, causing phantom ESC.
-    let on_hidden = super::process::is_on_hidden_desktop(top);
-    let skip_uia = is_chromium && !on_hidden;
+        let on_hidden = super::process::is_on_hidden_desktop(top);
+        // Skip UIA for ALL Chromium: UIA COM calls (ElementFromHandle, Invoke)
+        // trigger Electron/Chromium apps to internally call
+        // SetForegroundWindow → phantom ESC in Minecraft.
+        // Hidden desktop Chromium uses PostMessage to top (browser chrome).
+        // Visible desktop Chromium: no interaction (safe — no ESC).
+        let skip_uia = is_chromium;
     if pressed
         && button == 0x110
         && !is_classic_list
