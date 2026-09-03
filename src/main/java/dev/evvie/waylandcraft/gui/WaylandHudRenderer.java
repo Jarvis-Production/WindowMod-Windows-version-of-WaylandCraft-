@@ -110,6 +110,28 @@ public class WaylandHudRenderer {
 			RenderUtils.renderFramebuffer2D(context, buf, x, y, w, h);
 			stack.popMatrix();
 		}
+		
+		if(wlc.pinnedImage != null) {
+			try {
+				int imgW = wlc.pinnedImage.getWidth();
+				int imgH = wlc.pinnedImage.getHeight();
+				int maxDim = 256;
+				float scale = 1.0f;
+				if(imgW > maxDim || imgH > maxDim) {
+					scale = (float) maxDim / Math.max(imgW, imgH);
+				}
+				int drawW = (int)(imgW * scale);
+				int drawH = (int)(imgH * scale);
+
+				if(wlc.pinnedImageTexture == null) {
+					wlc.pinnedImageTexture = new net.minecraft.client.renderer.texture.DynamicTexture(() -> "windowmod_pinned_img", wlc.pinnedImage);
+					Minecraft.getInstance().getTextureManager().register(WaylandCraft.PINNED_IMAGE_ID, wlc.pinnedImageTexture);
+				}
+				context.blit(WaylandCraft.PINNED_IMAGE_ID, 4, 4, 0, 0, drawW, drawH, imgW, imgH);
+			} catch(Throwable t) {
+				WaylandCraft.LOGGER.error("Error rendering pinned image", t);
+			}
+		}
 	}
 	
 	private void renderDNDIcon(GuiGraphics context, DeltaTracker tracker) {

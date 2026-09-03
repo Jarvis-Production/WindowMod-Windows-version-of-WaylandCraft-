@@ -174,7 +174,11 @@ public class WindowManagerScreen extends Screen {
 	private void onHidePressed(Button button) {
 		if(focused == null) return;
 		
-		wlc.displays.removeIf((w) -> w.window == focused);
+		if(wlc.hasDisplayFor(focused)) {
+			wlc.displays.removeIf((w) -> w.window == focused);
+		} else {
+			wlc.getOrCreateDisplay(focused);
+		}
 	}
 	
 	private void onResizePressed(Button button) {
@@ -193,8 +197,12 @@ public class WindowManagerScreen extends Screen {
 	private void onPinPressed(Button button) {
 		if(focused == null) return;
 		
-		if(wlc.pinnedToplevel != focused) wlc.pinnedToplevel = focused;
-		else wlc.pinnedToplevel = null;
+		if(wlc.pinnedToplevel != focused) {
+			wlc.pinnedToplevel = focused;
+			wlc.getOrCreateDisplay(focused);
+		} else {
+			wlc.pinnedToplevel = null;
+		}
 	}
 	
 	private void onItemPressed(Button button) {

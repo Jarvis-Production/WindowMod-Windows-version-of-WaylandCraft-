@@ -765,6 +765,7 @@ public class WaylandCraftBridge {
 	private static native RawDesktopEntry[] loadDesktopEntries(long instance);
 	
 	private static native boolean renderSVG(String path, int width, int height, long ptr);
+	private static native boolean renderImage(String path, int width, int height, long ptr);
 	
 	private static native boolean execApp(long instance, String appId);
 	private static native boolean launchExe(long instance, String path);

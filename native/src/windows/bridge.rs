@@ -277,6 +277,16 @@ bind_java_type! {
             name = "renderSVG",
             fn = render_svg,
         },
+        static extern fn render_image {
+            sig = (
+                path: JString,
+                width: jint,
+                height: jint,
+                buffer_ptr: jlong
+            ) -> jboolean,
+            name = "renderImage",
+            fn = render_image,
+        },
         static extern fn exec_app {
             sig = (instance: jlong, app_id: JString) -> jboolean,
             fn = exec_app,
@@ -1296,6 +1306,38 @@ fn render_svg<'local>(
     } else {
         false
     })
+}
+
+fn render_image<'local>(
+    env: &mut Env<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
+    width: jint,
+    height: jint,
+    buffer_ptr: jlong,
+) -> Result<jboolean, BridgeError> {
+    let path: String = path.try_to_string(env)?;
+    let data = buffer_ptr as usize as *mut u8;
+    let data_slice = unsafe { std::slice::from_raw_parts_mut(data, (width as usize) * (height as usize) * 4) };
+
+    let img = match image::open(&path) {
+        Ok(img) => img,
+        Err(e) => {
+            eprintln!("[windowmod] render_image: failed to open {}: {}", path, e);
+            return Ok(false);
+        }
+    };
+
+    let rgba = img.resize_exact(width as u32, height as u32, image::imageops::FilterType::Lanczos3).to_rgba8();
+    for (i, pixel) in rgba.pixels().enumerate() {
+        let offset = i * 4;
+        data_slice[offset] = pixel[0];
+        data_slice[offset + 1] = pixel[1];
+        data_slice[offset + 2] = pixel[2];
+        data_slice[offset + 3] = pixel[3];
+    }
+    eprintln!("[windowmod] render_image: loaded {} ({}x{})", path, width, height);
+    Ok(true)
 }
 
 fn exec_app<'local>(

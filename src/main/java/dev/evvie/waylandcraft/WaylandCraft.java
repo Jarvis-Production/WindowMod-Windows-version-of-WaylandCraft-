@@ -77,6 +77,10 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 	public HitResult trueGameHitResult = null;
 	
 	public WLCToplevel pinnedToplevel = null;
+	public com.mojang.blaze3d.platform.NativeImage pinnedImage = null;
+	public net.minecraft.client.renderer.texture.DynamicTexture pinnedImageTexture = null;
+	public String pinnedImagePath = null;
+	public static final net.minecraft.resources.Identifier PINNED_IMAGE_ID = net.minecraft.resources.Identifier.fromNamespaceAndPath(MOD_ID, "pinned_image");
 	
 	public WindowItemManager itemManager = new WindowItemManager(this);
 	public XDGDesktopManager xdgManager;
@@ -132,8 +136,44 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 			dispatcher.register(ClientCommandManager.literal("window")
 				.then(ClientCommandManager.argument("path", StringArgumentType.greedyString())
 					.executes(ctx -> {
-						String path = StringArgumentType.getString(ctx, "path").trim();
+						String raw = StringArgumentType.getString(ctx, "path").trim();
 						Minecraft mc = Minecraft.getInstance();
+
+						String path = raw;
+						if(path.startsWith("\"") && path.endsWith("\"")) {
+							path = path.substring(1, path.length() - 1);
+						}
+
+						String ext = "";
+						int dot = path.lastIndexOf('.');
+						if(dot >= 0) ext = path.substring(dot + 1).toLowerCase();
+
+						boolean isImage = ext.equals("png") || ext.equals("jpg") || ext.equals("jpeg")
+							|| ext.equals("bmp") || ext.equals("gif") || ext.equals("webp");
+
+						if(isImage) {
+							if(mc.player != null) {
+								mc.player.displayClientMessage(Component.literal("Loading image: " + path), false);
+							}
+							try {
+								java.io.File file = new java.io.File(path);
+								if(!file.exists()) {
+									if(mc.player != null) mc.player.displayClientMessage(Component.literal("File not found: " + path), false);
+									return 1;
+								}
+								com.mojang.blaze3d.platform.NativeImage image = com.mojang.blaze3d.platform.NativeImage.read(new java.io.FileInputStream(file));
+								pinnedImage = image;
+								pinnedImagePath = path;
+								if(mc.player != null) {
+									mc.player.displayClientMessage(Component.literal("Image loaded (" + image.getWidth() + "x" + image.getHeight() + ") — displaying on HUD"), false);
+								}
+							} catch(Throwable t) {
+								LOGGER.error("Failed to load image: " + path, t);
+								if(mc.player != null) mc.player.displayClientMessage(Component.literal("Failed to load image: " + t.getMessage()), false);
+							}
+							return 1;
+						}
+
 						if(mc.player != null) {
 							mc.player.displayClientMessage(Component.literal("Launching: " + path), false);
 						}
@@ -245,6 +285,10 @@ public class WaylandCraft implements ModInitializer, ClientModInitializer {
 				}
 			}
 			else playerUsingWindowItem = false;
+		}
+		
+		if(pinnedToplevel != null && pinnedToplevel.isAlive() && hasDisplayFor(pinnedToplevel)) {
+			getOrCreateDisplay(pinnedToplevel).anchorToCamera(camera);
 		}
 		
 		updateOutputSize(inWMScreen);
