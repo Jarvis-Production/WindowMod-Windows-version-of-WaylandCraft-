@@ -1,6 +1,6 @@
 use windows::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, MAPVK_VSC_TO_VK};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindow, GetWindowLongW, GetWindowThreadProcessId, IsWindowVisible,
+    GetWindow, GetWindowTextW, GetWindowLongW, GetWindowThreadProcessId, IsWindowVisible,
     PostMessageW, SendMessageW, ShowWindow, SW_MINIMIZE, GW_CHILD, GW_HWNDNEXT, GWL_STYLE,
     WS_VISIBLE, WM_ACTIVATE, WM_CHAR, WM_HSCROLL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
     WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
@@ -489,18 +489,18 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
         if pressed && !is_chromium {
             activate_target(top, target);
         }
-        let _ = PostMessageW(target, WM_MOUSEMOVE, move_wparam, lparam);
-        if !is_chromium || !pressed {
+        if !is_chromium {
+            let _ = PostMessageW(target, WM_MOUSEMOVE, move_wparam, lparam);
             let _ = PostMessageW(target, msg, wparam, lparam);
-        } else if is_chromium && pressed {
+        } else if pressed && super::process::is_on_hidden_desktop(top) {
             // Hidden desktop Chromium: PostMessage to top-level for browser
-            // chrome (Opera tabs, address bar). UIA handles web content.
-            // Visible desktop Chromium: skip ALL PostMessage — causes
-            // SetForegroundWindow → phantom ESC.
-            if super::process::is_on_hidden_desktop(top) {
-                let _ = PostMessageW(top, msg, wparam, lparam);
-            }
+            // chrome (Opera tabs, address bar).
+            let _ = PostMessageW(top, WM_MOUSEMOVE, move_wparam, lparam);
+            let _ = PostMessageW(top, msg, wparam, lparam);
         }
+        // Visible desktop Chromium: NO PostMessage at all —
+        // WM_LBUTTONDOWN to Chrome_RenderWidgetHostHWND or Chrome_WidgetWin_1
+        // triggers SetForegroundWindow → phantom ESC.
     }
 
     // UI Automation Invoke path — ONLY for hidden desktop Chromium and
@@ -517,12 +517,7 @@ pub fn pointer_button(state: &mut WindowMod, button: u32, pressed: bool) -> u32 
     // is skipped — UIA COM calls to visible Chromium trigger
     // SetForegroundWindow internally, causing phantom ESC.
         let on_hidden = super::process::is_on_hidden_desktop(top);
-        // Skip UIA for ALL Chromium: UIA COM calls (ElementFromHandle, Invoke)
-        // trigger Electron/Chromium apps to internally call
-        // SetForegroundWindow → phantom ESC in Minecraft.
-        // Hidden desktop Chromium uses PostMessage to top (browser chrome).
-        // Visible desktop Chromium: no interaction (safe — no ESC).
-        let skip_uia = is_chromium;
+        let skip_uia = is_chromium && !on_hidden;
     if pressed
         && button == 0x110
         && !is_classic_list
